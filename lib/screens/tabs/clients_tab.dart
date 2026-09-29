@@ -99,11 +99,6 @@ class _ClientsTabState extends State<ClientsTab> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      OutlinedButton.icon(
-                        onPressed: () => _openPairingCodeDialog(context),
-                        icon: const Icon(Icons.link, size: 17),
-                        label: const Text('Eşleşme Kodu', style: TextStyle()),
-                      ),
                       FilledButton.icon(
                         onPressed: () => _openClientEditor(context),
                         icon: const Icon(Icons.person_add_alt, size: 17),

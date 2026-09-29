@@ -374,6 +374,26 @@ class MindTrackBackend {
     return _watch('tasks', {'client_uid': uid}, rowMapper: _legacyTask);
   }
 
+  /// Psikologun gönderdiği görevler ve danışanların cevapları.
+  ///
+  /// Görevler `tasks` tablosunda tutulur; danışan cevabı `submit_task` RPC'si
+  /// ile aynı satıra yazar. Psikolog tarafı bu akışı okumadığı için cevaplar
+  /// veritabanında dursa da arayüzde görünmüyordu.
+  Stream<List<Map<String, dynamic>>> watchPsychologistTasks() {
+    final uid = userId;
+    if (uid == null) return Stream.value(const []);
+    return _watch('tasks', {'psychologist_id': uid}, rowMapper: _legacyTask);
+  }
+
+  /// `watchPsychologistTasks` akışının tek seferlik karşılığı. Canlı akış
+  /// bağlantı kurulana kadar boş kalabilir; "Yenile" bunu kullanır.
+  Future<List<Map<String, dynamic>>> psychologistTasks() async {
+    final uid = userId;
+    if (uid == null) return const [];
+    final rows = await _select('tasks', {'psychologist_id': uid});
+    return rows.map(_legacyTask).whereType<Map<String, dynamic>>().toList();
+  }
+
   Future<void> assignTask({
     required String clientRef,
     required String clientUid,

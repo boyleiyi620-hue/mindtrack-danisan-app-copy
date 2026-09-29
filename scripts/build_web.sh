@@ -44,12 +44,26 @@ build_target() {
 
   cp "$WEB_DIR/$template" "$WEB_DIR/index.html"
   cp "$WEB_DIR/$manifest" "$WEB_DIR/manifest.json"
+
+  # `rm -rf` çıktı klasörünü ve içindeki Vercel proje bağlantısını (.vercel)
+  # birlikte siler; bağlantı sonraki `vercel deploy` çağrıları için saklanır.
+  local link_backup=""
+  if [ -d "$BUILD_DIR/$output/.vercel" ]; then
+    link_backup="$(mktemp -d)/vercel"
+    cp -a "$BUILD_DIR/$output/.vercel" "$link_backup"
+  fi
+
   rm -rf "$BUILD_DIR/web" "$BUILD_DIR/$output"
   "$FLUTTER_BIN" build web --release --no-wasm-dry-run -t "lib/$target" "${DEFINES[@]}"
   cp -a "$BUILD_DIR/web" "$BUILD_DIR/$output"
   # Önceki Flutter sürümünün service worker cache'ini kullanan tarayıcıları temizle.
   cp "$WEB_DIR/disable_flutter_service_worker.js" \
     "$BUILD_DIR/$output/flutter_service_worker.js"
+  # SPA rewrite olmadan derin bağlantılar 404 döner; bu dosya çıktının parçasıdır.
+  cp "$ROOT_DIR/scripts/vercel.json" "$BUILD_DIR/$output/vercel.json"
+  if [ -n "$link_backup" ]; then
+    cp -a "$link_backup" "$BUILD_DIR/$output/.vercel"
+  fi
 }
 
 build_target "main_psych.dart" "index_psychologist.html" "manifest_psychologist.json" "psych"

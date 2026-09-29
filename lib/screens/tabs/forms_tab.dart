@@ -329,6 +329,16 @@ class _FormsTabState extends State<FormsTab> {
                 icon: const Icon(Icons.edit_note, size: 15),
                 label: const Text('Doldur', style: TextStyle(fontSize: 12.5)),
               ),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  minimumSize: const Size(0, 36),
+                ),
+                onPressed: () => _openIncomingResponses(f),
+                icon: const Icon(Icons.inbox_outlined, size: 15),
+                label: const Text('Cevaplar', style: TextStyle(fontSize: 12.5)),
+              ),
               FilledButton.icon(
                 style: FilledButton.styleFrom(
                   visualDensity: VisualDensity.compact,
@@ -536,6 +546,16 @@ class _FormsTabState extends State<FormsTab> {
     }
   }
 
+  /// Danışanlardan gelen form cevaplarını canlı olarak gösterir.
+  Future<void> _openIncomingResponses(FormEntry f) async {
+    final ready = await _ensureBackendSession(context);
+    if (!ready || !mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => _IncomingResponsesDialog(form: f),
+    );
+  }
+
   /// Yerel hesabın uzak karşılığı açık değilse şifre ister.
   Future<bool> _ensureBackendSession(BuildContext context) async {
     final backend = MindTrackBackend.instance;
@@ -674,6 +694,362 @@ class _FormsTabState extends State<FormsTab> {
           const SnackBar(content: Text('Form silindi.', style: TextStyle())),
         );
     }
+  }
+}
+
+/// Danışanların gönderdiği form cevaplarını canlı izleyen pencere.
+///
+/// Cevaplar `tasks` tablosunda durur. Danışan `submit_task` ile yazdığında
+/// Realtime üzerinden akış anında tazelenir; ayrıca "Yenile" düğmesi
+/// bağlantı kopmuşsa elle çekme imkânı verir.
+class _IncomingResponsesDialog extends StatefulWidget {
+  const _IncomingResponsesDialog({required this.form});
+
+  final FormEntry form;
+
+  @override
+  State<_IncomingResponsesDialog> createState() =>
+      _IncomingResponsesDialogState();
+}
+
+class _IncomingResponsesDialogState
+    extends State<_IncomingResponsesDialog> {
+  List<Map<String, dynamic>>? _rows;
+
+  Future<void> _reload() async {
+    final uid = MindTrackBackend.instance.userId;
+    if (uid == null) return;
+    try {
+      final rows = await MindTrackBackend.instance.psychologistTasks();
+      if (!mounted) return;
+      setState(() => _rows = rows);
+    } on BackendException {
+      // Akış zaten canlı; sessizce geç, bir sonraki değişiklikte düzelir.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.all(16),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppSizes.radius),
+      ),
+      child: SizedBox(
+        width: 680,
+        height: 640,
+        child: StreamBuilder<List<Map<String, dynamic>>>(
+          stream: MindTrackBackend.instance.watchPsychologistTasks(),
+          builder: (context, snapshot) {
+            final all = snapshot.data ?? _rows ?? const <Map<String, dynamic>>[];
+            final rows =
+                all.where((t) => t['formId'] == widget.form.id).toList()
+                  ..sort((a, b) => _time(b).compareTo(_time(a)));
+            final answered = rows.where(_isAnswered).length;
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _header(context, rows.length, answered),
+                const Divider(height: 1),
+                Expanded(
+                  child: rows.isEmpty
+                      ? const _IncomingEmpty()
+                      : ListView.separated(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: rows.length,
+                          separatorBuilder: (_, _) => const SizedBox(height: 10),
+                          itemBuilder: (_, i) => _ResponseCard(row: rows[i]),
+                        ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  static double _time(Map<String, dynamic> row) =>
+      (row['createdAtMs'] as num?)?.toDouble() ?? 0;
+
+  static bool _isAnswered(Map<String, dynamic> row) {
+    final text = (row['response'] ?? '').toString().trim();
+    final answers = row['structuredAnswers'];
+    return text.isNotEmpty || (answers is Map && answers.isNotEmpty);
+  }
+
+  Widget _header(BuildContext context, int total, int answered) {
+    final pending = total - answered;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 10, 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Gelen Cevaplar',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.text,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  widget.form.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: AppColors.muted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (answered > 0)
+            Padding(
+              padding: const EdgeInsets.only(right: 6, top: 2),
+              child: _countChip('$answered cevap', AppColors.success),
+            ),
+          if (pending > 0)
+            Padding(
+              padding: const EdgeInsets.only(right: 4, top: 2),
+              child: _countChip('$pending bekliyor', AppColors.muted),
+            ),
+          IconButton(
+            tooltip: 'Yenile',
+            visualDensity: VisualDensity.compact,
+            onPressed: _reload,
+            icon: const Icon(Icons.refresh, size: 19),
+          ),
+          IconButton(
+            tooltip: 'Kapat',
+            visualDensity: VisualDensity.compact,
+            onPressed: () => Navigator.of(context).pop(),
+            icon: const Icon(Icons.close, size: 19),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _countChip(String label, Color color) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.10),
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(
+        fontSize: 11.5,
+        fontWeight: FontWeight.w700,
+        color: color,
+      ),
+    ),
+  );
+}
+
+/// Tek bir danışanın cevabı: soru/cevap listesi ve durum.
+class _ResponseCard extends StatelessWidget {
+  const _ResponseCard({required this.row});
+
+  final Map<String, dynamic> row;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = (row['clientName'] ?? '').toString().trim();
+    final answers = row['structuredAnswers'];
+    final freeText = (row['response'] ?? '').toString().trim();
+    final answered = _IncomingResponsesDialogState._isAnswered(row);
+    final created = (row['createdAtMs'] as num?)?.toDouble() ?? 0;
+    final draft = row['formDraft'];
+    final questions = draft is Map
+        ? ((draft['questions'] as List?) ?? const [])
+            .map((e) => FormQuestion.fromJson(e as Map<String, dynamic>))
+            .toList()
+        : <FormQuestion>[];
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 15,
+                child: Text(
+                  initials(name.isEmpty ? '?' : name),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name.isEmpty ? 'İsimsiz danışan' : name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.text,
+                      ),
+                    ),
+                    Text(
+                      answered
+                          ? 'Cevaplandı · ${timeAgo(created)}'
+                          : 'Gönderildi · ${timeAgo(created)}',
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: AppColors.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 9,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: (answered ? AppColors.success : AppColors.warning)
+                      .withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  answered ? 'Cevaplandı' : 'Bekliyor',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: answered ? AppColors.success : AppColors.warning,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (!answered) ...[
+            const SizedBox(height: 10),
+            const Text(
+              'Danışan bu formu henüz doldurmadı.',
+              style: TextStyle(fontSize: 12.5, color: AppColors.muted),
+            ),
+          ] else ...[
+            const SizedBox(height: 12),
+            const Divider(height: 1),
+            const SizedBox(height: 10),
+            for (final q in questions) ...[
+              _answerRow(q, answers is Map ? answers[q.id] : null),
+              const SizedBox(height: 8),
+            ],
+            if (freeText.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              const Text(
+                'Serbest metin',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.muted,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                freeText,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppColors.text,
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _answerRow(FormQuestion q, Object? value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          q.text,
+          style: const TextStyle(
+            fontSize: 12,
+            color: AppColors.muted,
+            height: 1.35,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          _formatAnswer(value),
+          style: const TextStyle(
+            fontSize: 13.5,
+            fontWeight: FontWeight.w600,
+            color: AppColors.text,
+            height: 1.35,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Cevap tipleri metin, sayı, boolean veya çoklu seçim listesi olabilir.
+  static String _formatAnswer(Object? value) {
+    if (value == null) return '—';
+    if (value is List) {
+      return value.isEmpty ? '—' : value.map((e) => e.toString()).join(', ');
+    }
+    if (value is bool) return value ? 'Evet' : 'Hayır';
+    final text = value.toString().trim();
+    return text.isEmpty ? '—' : text;
+  }
+}
+
+class _IncomingEmpty extends StatelessWidget {
+  const _IncomingEmpty();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.inbox_outlined,
+            size: 34,
+            color: AppColors.muted,
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Bu form henüz danışana gönderilmedi.',
+            style: TextStyle(fontSize: 13, color: AppColors.text2),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Gönderdiğinizde cevaplar burada belirir.',
+            style: TextStyle(fontSize: 12.5, color: AppColors.muted),
+          ),
+        ],
+      ),
+    );
   }
 }
 
