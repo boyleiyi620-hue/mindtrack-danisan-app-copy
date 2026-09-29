@@ -2,7 +2,7 @@
 class Client {
   final String id;
 
-  /// Danışan uygulamasındaki Firebase kullanıcısının UID'si.
+  /// Danışan uygulamasındaki Supabase kullanıcısının UUID'si.
   /// Eski yerel kayıtlar için boş kalabilir.
   String clientUserId;
   String name;

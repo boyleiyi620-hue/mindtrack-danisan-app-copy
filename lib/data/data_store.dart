@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -17,6 +15,7 @@ import '../models/plan.dart';
 import '../models/task.dart';
 import '../models/user_account.dart';
 import 'account_store.dart';
+import 'mindtrack_backend.dart';
 
 /// Kullanıcıya özel veri deposu — her değişiklikte kaydeder ve ekranlara haber verir.
 class DataStore extends ChangeNotifier {
@@ -26,7 +25,7 @@ class DataStore extends ChangeNotifier {
   bool _remoteLoading = false;
   bool _remoteSaving = false;
   String? _pendingRemoteEncoded;
-  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _remoteSubscription;
+  StreamSubscription<Map<String, dynamic>?>? _remoteSubscription;
 
   DataStore(this.accounts) {
     load();
@@ -65,46 +64,49 @@ class DataStore extends ChangeNotifier {
     _loadRemote();
   }
 
-  /// Firebase oturumu açıldıktan sonra telefon/web senkronunu başlatır.
+  /// Supabase oturumu açıldıktan sonra telefon/web senkronunu başlatır.
   Future<void> startRemoteSync() => _loadRemote();
 
   Future<void> _loadRemote() async {
-    final authUser = FirebaseAuth.instance.currentUser;
     final localUser = accounts.current;
-    if (authUser == null || localUser == null || _remoteLoading) return;
+    if (localUser == null || _remoteLoading) return;
+    final backend = MindTrackBackend.instance;
+    if (!backend.isSignedIn) return;
     _remoteLoading = true;
-    final ref = FirebaseFirestore.instance
-        .collection('psychologists')
-        .doc(authUser.uid)
-        .collection('state')
-        .doc('appData');
     await _remoteSubscription?.cancel();
-    try {
-      final snap = await ref.get();
-      await _applyRemoteSnapshot(snap, localUser);
-      _remoteSubscription = ref.snapshots().listen(
-        (snapshot) => _applyRemoteSnapshot(snapshot, localUser),
-        onError: (_) {},
-      );
-    } catch (_) {
-      // Yerel veri kullanılmaya devam eder; ağ hatası uygulamayı durdurmaz.
-    } finally {
-      _remoteLoading = false;
-    }
+    _remoteSubscription = backend.watchState().listen(
+      (remote) => _applyRemoteState(remote, localUser),
+      onError: (_) {},
+    );
+    _remoteLoading = false;
   }
 
-  Future<void> _applyRemoteSnapshot(
-      DocumentSnapshot<Map<String, dynamic>> snap, UserAccount localUser) async {
-    final remote = snap.data()?['data'];
-    if (remote is! Map<String, dynamic>) return;
+  Future<void> _applyRemoteState(
+      Map<String, dynamic>? remote, UserAccount localUser) async {
+    if (remote == null) return;
     try {
       final next = AppData.fromJson(remote);
+      await _hydratePdfs(next);
       final encoded = jsonEncode(next.toJson());
       data = next;
       await _prefs.setString(accounts.dataKey(localUser), encoded);
       notifyListeners();
     } catch (_) {
       // Bozuk uzak veri mevcut yerel verinin üzerine yazılmaz.
+    }
+  }
+
+  /// Uzak kopyada yalnızca yol saklanan PDF'leri indirip `dataUrl` alanını
+  /// doldurur. Böylece PDF kütüphanesi ekranda her zaman yerel çalışır.
+  Future<void> _hydratePdfs(AppData next) async {
+    for (final file in next.pdfFiles) {
+      if (file.dataUrl.isNotEmpty || file.storagePath.isEmpty) continue;
+      try {
+        final bytes = await MindTrackBackend.instance.downloadPdf(file.storagePath);
+        file.dataUrl = 'data:${file.type};base64,${base64Encode(bytes)}';
+      } catch (_) {
+        // Dosya uzak depoda yoksa kütüphane satırı boş kalır, uygulama çalışır.
+      }
     }
   }
 
@@ -125,7 +127,7 @@ class DataStore extends ChangeNotifier {
 
   Future<void> _saveRemote(String encoded) async {
     // Arka arkaya gelen işlemlerden hiçbiri kaybolmasın: yeni kayıt, devam eden
-    // Firestore yazmasının arkasında kuyruğa alınır ve son durum ayrıca yazılır.
+    // uzak yazmanın arkasında kuyruğa alınır ve son durum ayrıca yazılır.
     _pendingRemoteEncoded = encoded;
     if (_remoteSaving) return;
     _remoteSaving = true;
@@ -133,24 +135,60 @@ class DataStore extends ChangeNotifier {
       while (_pendingRemoteEncoded != null) {
         final payload = _pendingRemoteEncoded!;
         _pendingRemoteEncoded = null;
-        final authUser = FirebaseAuth.instance.currentUser;
-        if (authUser == null) break;
-        // Firestore tek belge sınırını ve büyük PDF verilerini aşmamak için
-        // yalnızca makul boyuttaki yapılandırılmış uygulama verisini senkronlarız.
-        if (utf8.encode(payload).length > 900000) continue;
+        final backend = MindTrackBackend.instance;
+        if (!backend.isSignedIn) break;
         try {
-          await FirebaseFirestore.instance
-              .collection('psychologists')
-              .doc(authUser.uid)
-              .collection('state')
-              .doc('appData')
-              .set({'data': jsonDecode(payload), 'updatedAt': FieldValue.serverTimestamp()});
+          // Base64 PDF'ler önce Storage'a çıkarılır; jsonb gövdesi hafif kalır.
+          // Aksi halde ücretsiz plandaki 500 MB'lık veritabanı birkaç dosyada
+          // dolar ve (eski sürümdeki gibi) senkron tümüyle durur.
+          final slim = await _slimForRemote(payload);
+          await backend.saveState(slim);
         } catch (_) {
           // Yerel kayıt korunur; sonraki kullanıcı işleminde yeniden denenir.
         }
       }
     } finally {
       _remoteSaving = false;
+    }
+  }
+
+  /// PDF ikili içeriklerini Storage'a yükleyip gövdeden çıkarır.
+  ///
+  /// `data` nesnesine dokunmaz; yalnızca gönderilecek kopya hafifletilir,
+  /// böylece cihazdaki yerel kopyalar bozulmaz.
+  Future<Map<String, dynamic>> _slimForRemote(String encoded) async {
+    final decoded = jsonDecode(encoded) as Map<String, dynamic>;
+    final files = decoded['pdfFiles'];
+    if (files is! List || files.isEmpty) return decoded;
+    for (final raw in files) {
+      if (raw is! Map) continue;
+      final dataUrl = raw['dataUrl']?.toString() ?? '';
+      if (dataUrl.isEmpty) continue;
+      if ((raw['storagePath']?.toString() ?? '').isNotEmpty) {
+        raw['dataUrl'] = '';
+        continue;
+      }
+      final bytes = _decodeDataUrl(dataUrl);
+      if (bytes == null) continue;
+      try {
+        final path = await MindTrackBackend.instance
+            .uploadPdf(raw['id'].toString(), bytes);
+        raw['storagePath'] = path;
+        raw['dataUrl'] = '';
+      } catch (_) {
+        // Yükleme başarısız olursa bu dosya için gövde olduğu gibi kalır.
+      }
+    }
+    return decoded;
+  }
+
+  Uint8List? _decodeDataUrl(String dataUrl) {
+    final comma = dataUrl.indexOf(',');
+    if (comma < 0) return null;
+    try {
+      return base64Decode(dataUrl.substring(comma + 1));
+    } catch (_) {
+      return null;
     }
   }
 

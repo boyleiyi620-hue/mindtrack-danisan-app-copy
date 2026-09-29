@@ -25,6 +25,10 @@ class PdfFile {
   String dataUrl;
   double addedAt;
 
+  /// Uzak depoda tutulan yol (`<psikolog uid>/<id>`). Base64 içerik
+  /// jsonb'ye gömülmez; cihazda yerel kopyası yoksa indirilir.
+  String storagePath;
+
   PdfFile({
     required this.id,
     required this.catId,
@@ -32,6 +36,7 @@ class PdfFile {
     required this.dataUrl,
     this.type = 'application/pdf',
     this.size = 0,
+    this.storagePath = '',
     double? addedAt,
   }) : addedAt = addedAt ?? DateTime.now().millisecondsSinceEpoch.toDouble();
 
@@ -42,6 +47,7 @@ class PdfFile {
         'type': type,
         'size': size,
         'dataUrl': dataUrl,
+        'storagePath': storagePath,
         'addedAt': addedAt,
       };
 
@@ -52,6 +58,7 @@ class PdfFile {
         type: j['type'] as String? ?? 'application/pdf',
         size: (j['size'] as num?)?.toInt() ?? 0,
         dataUrl: j['dataUrl'] as String? ?? '',
+        storagePath: j['storagePath'] as String? ?? '',
         addedAt: (j['addedAt'] as num?)?.toDouble() ?? 0,
       );
 }

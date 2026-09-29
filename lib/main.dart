@@ -1,19 +1,15 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show AuthState;
 
-import 'firebase_options.dart';
 import 'data/diagnosis_codes.dart';
+import 'data/mindtrack_backend.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
+    await MindTrackBackend.init();
   } catch (error) {
-    debugPrint('Firebase init error: $error');
+    debugPrint('Supabase init error: $error');
   }
   runApp(const MindTrackClientApp());
 }
@@ -44,15 +40,15 @@ class AuthGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
+    return StreamBuilder<AuthState>(
+      stream: MindTrackBackend.instance.authStateChanges(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        if (!snapshot.hasData) return const LoginScreen();
+        if (snapshot.data?.session == null) return const LoginScreen();
         return const ClientShell();
       },
     );
@@ -89,29 +85,24 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     setState(() => _loading = true);
     try {
-      UserCredential credential;
+      final backend = MindTrackBackend.instance;
+      final email = _email.text.trim();
       if (_isReg) {
-        credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-          email: _email.text.trim(),
-          password: _pass.text,
+        await backend.signUp(email, _pass.text, displayName: _name.text.trim());
+        await backend.upsertPatientProfile(
+          displayName: _name.text.trim(),
+          email: email,
         );
-        await credential.user?.updateDisplayName(_name.text.trim());
       } else {
-        credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
-          email: _email.text.trim(),
-          password: _pass.text,
+        await backend.signIn(email, _pass.text);
+        final name = backend.displayName;
+        await backend.upsertPatientProfile(
+          displayName: name,
+          email: backend.userEmail ?? email,
         );
       }
-      final uid = credential.user?.uid;
-      if (uid != null) {
-        final displayName = _isReg
-            ? _name.text.trim()
-            : (credential.user?.displayName?.trim() ?? '');
-        await FirebaseFirestore.instance.collection('patients').doc(uid).set({
-          if (displayName.isNotEmpty) 'displayName': displayName,
-          'email': _email.text.trim(),
-        }, SetOptions(merge: true));
-      }
+    } on BackendException catch (e) {
+      _showError('Hata: ${e.message}');
     } catch (error) {
       _showError('Hata: $error');
     } finally {
@@ -214,21 +205,17 @@ class _ClientShellState extends State<ClientShell> {
 
   @override
   Widget build(BuildContext context) {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return const LoginScreen();
+    if (!MindTrackBackend.instance.isSignedIn) return const LoginScreen();
 
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection('patients')
-          .doc(uid)
-          .snapshots(),
+    return StreamBuilder<Map<String, dynamic>?>(
+      stream: MindTrackBackend.instance.watchPatient(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        final patient = snapshot.data?.data() ?? <String, dynamic>{};
+        final patient = snapshot.data ?? <String, dynamic>{};
         if (patient['consented'] != true) return const ConsentScreen();
         final psychologistId = patient['psychologistId']?.toString();
         if (psychologistId == null || psychologistId.isEmpty) {
@@ -292,13 +279,11 @@ class _ConsentScreenState extends State<ConsentScreen> {
     if (!_agreed) return;
     setState(() => _saving = true);
     try {
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-      if (uid != null) {
-        await FirebaseFirestore.instance.collection('patients').doc(uid).set({
-          'consented': true,
-          'email': FirebaseAuth.instance.currentUser?.email ?? '',
-        }, SetOptions(merge: true));
-      }
+      final backend = MindTrackBackend.instance;
+      await backend.upsertPatientProfile(
+        consented: true,
+        email: backend.userEmail ?? '',
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -380,28 +365,10 @@ class _PairingScreenState extends State<PairingScreen> {
     if (code.isEmpty) return;
     setState(() => _loading = true);
     try {
-      final snap = await FirebaseFirestore.instance
-          .collection('pairingCodes')
-          .doc(code)
-          .get();
-      if (!snap.exists) throw 'Geçersiz kod.';
-
-      final data = snap.data() ?? <String, dynamic>{};
-      final psychologistId = data['psychologistId']?.toString();
-      final localClientId = data['clientId']?.toString();
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-      if (uid == null || psychologistId == null || psychologistId.isEmpty) {
-        throw 'Eşleşme bilgisi eksik.';
-      }
-
-      final pairingDiagnosisCodes = _listValue(data['diagnosisCodes']);
-      await FirebaseFirestore.instance.collection('patients').doc(uid).set({
-        'psychologistId': psychologistId,
-        ...?(localClientId == null ? null : {'localClientId': localClientId}),
-        if (pairingDiagnosisCodes.isNotEmpty)
-          'diagnosisCodes': pairingDiagnosisCodes,
-      }, SetOptions(merge: true));
-      await snap.reference.update({'clientUserId': uid, 'status': 'paired'});
+      // Eşleşme tek bir sunucu çağrısıyla atomik tamamlanır: kod sahiplenir ve
+      // danışanın satırı aynı işlemde güncellenir.
+      final claim = await MindTrackBackend.instance.claimPairingCode(code);
+      if (claim.psychologistId.isEmpty) throw 'Eşleşme bilgisi eksik.';
 
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -562,14 +529,9 @@ class ClientAppointments extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return const SizedBox.shrink();
-    final stream = FirebaseFirestore.instance
-        .collection('psychologists')
-        .doc(psychologistId)
-        .collection('appointments')
-        .where('clientFirebaseUid', isEqualTo: uid)
-        .snapshots();
+    final backend = MindTrackBackend.instance;
+    if (!backend.isSignedIn) return const SizedBox.shrink();
+    final stream = backend.watchClientAppointments();
 
     return Scaffold(
       appBar: AppBar(
@@ -582,7 +544,7 @@ class ClientAppointments extends StatelessWidget {
           ),
         ],
       ),
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      body: StreamBuilder<List<Map<String, dynamic>>>(
         stream: stream,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
@@ -593,17 +555,10 @@ class ClientAppointments extends StatelessWidget {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-          final docs =
-              snapshot.data!.docs
-                  .where(
-                    (doc) => doc.data()['status']?.toString() != 'cancelled',
-                  )
-                  .toList()
-                ..sort(
-                  (a, b) =>
-                      _appointmentDate(a.data())
-                          .compareTo(_appointmentDate(b.data())),
-                );
+          final docs = snapshot.data!
+              .where((doc) => doc['status']?.toString() != 'cancelled')
+              .toList()
+            ..sort((a, b) => _appointmentDate(a).compareTo(_appointmentDate(b)));
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
@@ -638,9 +593,8 @@ class ClientAppointments extends StatelessWidget {
 
   Widget _appointmentCard(
     BuildContext context,
-    DocumentSnapshot<Map<String, dynamic>> doc,
+    Map<String, dynamic> data,
   ) {
-    final data = doc.data() ?? <String, dynamic>{};
     final date = _appointmentDate(data);
     final status = data['status']?.toString() ?? 'pending';
     final statusLabel = _appointmentStatusLabel(status);
@@ -667,19 +621,19 @@ class ClientAppointments extends StatelessWidget {
                 children: [
                   IconButton(
                     tooltip: 'Randevuyu iptal et',
-                    onPressed: () => _cancelAppointment(context, doc.reference),
+                    onPressed: () => _cancelAppointment(context, data),
                     icon: const Icon(Icons.event_busy_outlined),
                   ),
                   IconButton(
                     tooltip: 'Randevuyu sil',
-                    onPressed: () => _deleteAppointment(context, doc.reference),
+                    onPressed: () => _deleteAppointment(context, data),
                     icon: const Icon(Icons.delete_outline),
                   ),
                 ],
               )
             : IconButton(
                 tooltip: 'Randevuyu sil',
-                onPressed: () => _deleteAppointment(context, doc.reference),
+                onPressed: () => _deleteAppointment(context, data),
                 icon: const Icon(Icons.delete_outline),
               ),
       ),
@@ -703,33 +657,24 @@ class ClientAppointments extends StatelessWidget {
   }
 
   Future<void> _createRequest(DateTime selectedDateTime) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) throw 'Oturum bulunamadı.';
+    if (!MindTrackBackend.instance.isSignedIn) throw 'Oturum bulunamadı.';
     if (selectedDateTime.isBefore(DateTime.now())) {
       throw 'Geçmiş bir tarih veya saat seçilemez.';
     }
 
     final identity = _requestIdentity(patient);
-    await FirebaseFirestore.instance
-        .collection('psychologists')
-        .doc(psychologistId)
-        .collection('appointments')
-        .add({
-          'clientFirebaseUid': uid,
-          'clientName': identity.name,
-          'clientFirstName': identity.firstName,
-          'clientLastName': identity.lastName,
-          'clientEmail': identity.email,
-          'date': Timestamp.fromDate(selectedDateTime),
-          'status': 'pending',
-          'createdAt': FieldValue.serverTimestamp(),
-          'type': 'request',
-        });
+    await MindTrackBackend.instance.createAppointmentRequest(
+      clientName: identity.name,
+      clientFirstName: identity.firstName,
+      clientLastName: identity.lastName,
+      clientEmail: identity.email,
+      at: selectedDateTime,
+    );
   }
 
   Future<void> _cancelAppointment(
     BuildContext context,
-    DocumentReference<Map<String, dynamic>> ref,
+    Map<String, dynamic> appointment,
   ) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -752,24 +697,17 @@ class ClientAppointments extends StatelessWidget {
     );
     if (ok != true) return;
     try {
-      await ref.update({
-        'status': 'cancelled',
-        'cancelledBy': 'client',
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      await MindTrackBackend.instance
+          .cancelAppointment(appointment['id'].toString(), by: 'client');
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('Randevu iptal edildi.')));
       }
-    } on FirebaseException catch (error) {
+    } on BackendException catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Randevu iptal edilemedi: ${error.message ?? error.code}',
-            ),
-          ),
+          SnackBar(content: Text('Randevu iptal edilemedi: ${error.message}')),
         );
       }
     }
@@ -777,7 +715,7 @@ class ClientAppointments extends StatelessWidget {
 
   Future<void> _deleteAppointment(
     BuildContext context,
-    DocumentReference<Map<String, dynamic>> ref,
+    Map<String, dynamic> appointment,
   ) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -800,16 +738,17 @@ class ClientAppointments extends StatelessWidget {
     );
     if (ok != true) return;
     try {
-      await ref.delete();
+      await MindTrackBackend.instance
+          .deleteAppointment(appointment['id'].toString());
       if (context.mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('Randevu silindi.')));
       }
-    } on FirebaseException catch (error) {
+    } on BackendException catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Randevu silinemedi: ${error.message ?? error.code}'),
+            content: Text('Randevu silinemedi: ${error.message}'),
           ),
         );
       }
@@ -933,17 +872,12 @@ class ClientHomeworks extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return const SizedBox.shrink();
+    final backend = MindTrackBackend.instance;
+    if (!backend.isSignedIn) return const SizedBox.shrink();
     return Scaffold(
       appBar: AppBar(title: const Text('Formlar ve Ödevler')),
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance
-            .collection('psychologists')
-            .doc(psychologistId)
-            .collection('tasks')
-            .where('clientFirebaseUid', isEqualTo: uid)
-            .snapshots(),
+      body: StreamBuilder<List<Map<String, dynamic>>>(
+        stream: backend.watchClientTasks(),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return Center(
@@ -953,7 +887,7 @@ class ClientHomeworks extends StatelessWidget {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-          final docs = snapshot.data!.docs;
+          final docs = snapshot.data!;
           if (docs.isEmpty) {
             return const Center(
               child: Text('Henüz atanmış form veya ödev yok.'),
@@ -963,7 +897,7 @@ class ClientHomeworks extends StatelessWidget {
             padding: const EdgeInsets.all(8),
             itemCount: docs.length,
             itemBuilder: (context, index) {
-              final data = docs[index].data();
+              final data = docs[index];
               final done = data['done'] == true;
               final draft = _mapValue(data['formDraft']);
               final title =
@@ -979,7 +913,7 @@ class ClientHomeworks extends StatelessWidget {
                     done ? Icons.check_circle : Icons.pending,
                     color: done ? Colors.green : Colors.orange,
                   ),
-                  onTap: () => _openForm(context, docs[index], data),
+                  onTap: () => _openForm(context, data),
                 ),
               );
             },
@@ -991,7 +925,6 @@ class ClientHomeworks extends StatelessWidget {
 
   Future<void> _openForm(
     BuildContext context,
-    DocumentSnapshot<Map<String, dynamic>> doc,
     Map<String, dynamic> task,
   ) async {
     final draft = _mapValue(task['formDraft']);
@@ -1006,7 +939,7 @@ class ClientHomeworks extends StatelessWidget {
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => ClientFormDialog(
-        taskReference: doc.reference,
+        taskId: task['id'].toString(),
         taskData: task,
         draft: draft,
       ),
@@ -1022,12 +955,12 @@ class ClientHomeworks extends StatelessWidget {
 class ClientFormDialog extends StatefulWidget {
   const ClientFormDialog({
     super.key,
-    required this.taskReference,
+    required this.taskId,
     required this.taskData,
     required this.draft,
   });
 
-  final DocumentReference<Map<String, dynamic>> taskReference;
+  final String taskId;
   final Map<String, dynamic> taskData;
   final Map<String, dynamic> draft;
 
@@ -1067,12 +1000,11 @@ class _ClientFormDialogState extends State<ClientFormDialog> {
       _error = null;
     });
     try {
-      await widget.taskReference.update({
-        'done': true,
-        'response': 'Form tamamlandı.',
-        'structuredAnswers': _answers,
-        'respondedAt': FieldValue.serverTimestamp(),
-      });
+      await MindTrackBackend.instance.submitTask(
+        widget.taskId,
+        response: 'Form tamamlandı.',
+        answers: _answers,
+      );
       if (mounted) Navigator.pop(context, true);
     } catch (error) {
       if (mounted) setState(() => _error = 'Hata: $error');
@@ -1268,8 +1200,7 @@ class _ClientProfileState extends State<ClientProfile> {
   }
 
   Future<void> _save() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+    if (!MindTrackBackend.instance.isSignedIn) return;
     final first = _firstName.text.trim();
     final last = _lastName.text.trim();
     if (first.isEmpty || last.isEmpty) {
@@ -1280,13 +1211,11 @@ class _ClientProfileState extends State<ClientProfile> {
     }
     setState(() => _saving = true);
     try {
-      await FirebaseFirestore.instance.collection('patients').doc(uid).set({
-        'firstName': first,
-        'lastName': last,
-        'name': '$first $last',
-        'displayName': '$first $last',
-        'email': _email.text.trim(),
-      }, SetOptions(merge: true));
+      await MindTrackBackend.instance.saveProfile(
+        firstName: first,
+        lastName: last,
+        email: _email.text.trim(),
+      );
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('Profil kaydedildi.')));
@@ -1335,7 +1264,7 @@ class _ClientProfileState extends State<ClientProfile> {
           ),
           const SizedBox(height: 30),
           OutlinedButton.icon(
-            onPressed: () => FirebaseAuth.instance.signOut(),
+            onPressed: () => MindTrackBackend.instance.signOut(),
             icon: const Icon(Icons.logout),
             label: const Text('Çıkış Yap'),
           ),
@@ -1360,14 +1289,14 @@ class _RequestIdentity {
 }
 
 _RequestIdentity _requestIdentity(Map<String, dynamic> patient) {
-  final user = FirebaseAuth.instance.currentUser;
-  final email = _firstNonEmpty([patient['email']?.toString(), user?.email, '']);
+  final backend = MindTrackBackend.instance;
+  final email = _firstNonEmpty([patient['email']?.toString(), backend.userEmail, '']);
   final storedFirst = patient['firstName']?.toString().trim() ?? '';
   final storedLast = patient['lastName']?.toString().trim() ?? '';
   final storedName = _firstNonEmpty([
     patient['name']?.toString(),
     patient['displayName']?.toString(),
-    user?.displayName,
+    backend.displayName,
     '',
   ]);
   final parts = storedName
@@ -1432,11 +1361,12 @@ Map<String, dynamic> _mapValue(dynamic value) {
 List<dynamic> _listValue(dynamic value) =>
     value is List ? value : const <dynamic>[];
 
+/// Randevu zamanı. Supabase `timestamptz` alanlarını ISO-8601 metin olarak
+/// döndürür; geçmişte kalan yerel kayıtlar için diğer temsiller de desteklenir.
 DateTime _appointmentDate(Map<String, dynamic> data) {
   final raw = data['date'];
-  if (raw is Timestamp) return raw.toDate();
   if (raw is DateTime) return raw;
-  if (raw is String) return DateTime.tryParse(raw) ?? DateTime(2100);
+  if (raw is String) return DateTime.tryParse(raw)?.toLocal() ?? DateTime(2100);
   if (raw is num) return DateTime.fromMillisecondsSinceEpoch(raw.toInt());
   return DateTime(2100);
 }

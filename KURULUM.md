@@ -1,50 +1,117 @@
 # MindTrack — Kurulum ve Kullanım Rehberi
 
-MindTrack, psikologlar için **tamamen yerel** çalışan bir klinik takip uygulamasıdır.
-Tüm verileriniz yalnızca kullandığınız cihazda saklanır; hiçbir sunucuya gönderilmez.
+MindTrack, psikologlar için çalışan bir klinik takip uygulamasıdır. Psikolog
+uygulaması cihazda **yerel-öncelikli** çalışır, ancak oturum açtığınızda kayıtlarınız
+**Supabase** ile cihazlarınız arasında eş zamanlı olarak senkronize edilir.
+Psikolog ↔ danışan akışı (eşleşme kodu, randevu, görev, ödev, form yanıtı)
+Supabase üzerinden gerçek zamanlı aktarılır.
+
+> Firebase kaldırılmıştır. Sunucu tarafındaki her şey artık Supabase'tir.
+> Supabase projesini ilk kez kuruyorsanız **[SUPABASE-KURULUM.md](SUPABASE-KURULUM.md)**
+> dosyasını sırayla uygulayın.
 
 ---
 
-## 1) Hızlı Başlangıç (Web — önerilen)
+## 1) Ön koşul: Supabase projesi
 
-ZIP içindeki `mindtrack/build/web` klasörü hazır bir web uygulamasıdır.
+Uygulamanın çalışması için bir Supabase projesi ve iki değer gerekir:
 
-### Yöntem A: Herhangi bir statik sunucuyla
-```bash
-cd mindtrack/build/web
-python3 -m http.server 8080
-```
-Tarayıcıda `http://localhost:8080` adresini açın. (Android telefonunuzda
-`adb reverse tcp:8080 tcp:8080` ile veya aynı ağda IP ile de açabilirsiniz.)
+- `SUPABASE_URL` — örn. `https://abcdefghijklm.supabase.co`
+- `SUPABASE_PUBLISHABLE_KEY` — proje ayarlarındaki `sb_publishable_…` publishable anahtar
+- `SUPABASE_PUBLISHABLE_KEY` — proje ayarlarındaki `sb_publishable_…` publishable anahtar
 
-### Yöntem B: index.html'i doğrudan açmak
-`build/web/index.html` dosyasına çift tıklayabilirsiniz; ancak bazı tarayıcılar
-dosya protokolünde yerel depolamayı kısıtlayabilir. Güvenli yol Yöntem A'dır.
+Bu iki değeri almak, veritabanı tablolarını oluşturmak ve Free planı yapılandırmak
+ için **[SUPABASE-KURULUM.md](SUPABASE-KURULUM.md)** adımlarını izleyin.
+
+> 🔒 `service_role` (secret) anahtarını asla buraya yazmayın ve uygulamaya
+> vermeyin. Uygulama yalnızca `anon` anahtarı kullanır.
 
 ---
 
-## 2) Android APK (mobil — kaynak koddan derleme)
-
-Bu çalışma ortamında Android SDK bulunmadığı için APK sizin bilgisayarınızda
-derlenir. Flutter SDK yüklü bir makinede:
+## 2) Hızlı Başlangıç (Web — önerilen)
 
 ```bash
-# Flutter'ın PATH'te olduğundan emin olun (flutter --version)
-cd mindtrack
+```bash
+# 1) Bağımlılıklar
 flutter pub get
-flutter build apk --release
+
+# 2) Supabase bağlantısı
+export SUPABASE_URL="https://yfxepfxgiceplghlrxek.supabase.co"
+export SUPABASE_PUBLISHABLE_KEY="sb_publishable_-2LSJNP29XcL3ykiRQ8aaQ_kxZ7aKAn"
+
+# 3) Psikolog + danışan web çıktısı
+./scripts/build_web.sh
 ```
 
-Çıktı: `build/app/outputs/flutter-apk/app-release.apk`
-Bu APK'yı telefona kopyalayıp kurun.
+Çıktılar:
+- `build/psych` → psikolog uygulaması
+- `build/client` → danışan uygulaması
+
+### Yayınlama
+
+`build/psych` ve `build/client` klasörleri **statik** dosyalardır; Firebase Hosting
+yerine herhangi bir statik barındırma servisine yüklenebilir:
+
+```bash
+# Örnek: herhangi bir statik sunucu ile denemek için
+cd build/psych && python3 -m http.server 8080
+```
+
+Servisler: Netlify, Vercel, Cloudflare Pages, GitHub Pages veya kendi sunucunuz.
+(Android telefonunuzda `adb reverse tcp:8080 tcp:8080` ile ya da aynı ağdaki IP
+ile de açabilirsiniz.)
+
+> **Zorunlu:** Her iki uygulama da Flutter SPA'sıdır. Barındırma **tüm**
+> adresleri `index.html`'e yönlendirmelidir (`/*` → `/index.html`, `200`);
+> aksi hâlde paylaşılan kod gibi derin bağlantılar 404 döner.
+> Servise göre ayarlar ve ayrıntılar için
+> [README_WEB_KAYNAK_KODU.md](README_WEB_KAYNAK_KODU.md#yayınlama) bölümüne bakın.
+
+---
+
+## 3) Android APK (mobil)
+
+Flutter SDK yüklü bir makinede:
+
+```bash
+flutter pub get
+
+# Psikolog APK'sı
+flutter build apk --release --flavor psychologist \
+  --dart-define=SUPABASE_URL="$SUPABASE_URL" \
+  --dart-define=SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
+
+# Danışan APK'sı
+flutter build apk --release --flavor client \
+  --dart-define=SUPABASE_URL="$SUPABASE_URL" \
+  --dart-define=SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
+```
+
+Çıktılar:
+- `build/app/outputs/flutter-apk/psychologist-release.apk`
+- `build/app/outputs/flutter-apk/client-release.apk`
 
 Gerekli Flutter sürümü: **3.38 veya üzeri** (proje Dart 3.13 ile yazıldı).
 
 ---
 
-## 3) Uygulama Özellikleri
+## 4) Nasıl çalışır?
 
-- **Giriş / Kayıt**: Yerel hesap (ad, e-posta, şifre). Şifreler SHA-256 tuzlu özetle saklanır.
+- **Kayıt / Giriş** — Supabase Auth (e-posta + şifre). Şifreler sunucuda
+  saklanmaz; doğrulama Supabase tarafından yapılır.
+- **Senkronizasyon** — Psikolog uygulaması klinik kaydı cihazda tutmaya devam
+  eder; oturum açıkken arka planda Supabase'e yazar, başka bir cihazda açıldığında
+  oradan okur. Ağ yokken uygulama normal çalışır, bağlantı gelince eşitlenir.
+- **Gerçek zamanlı akış** — Psikolog bir randevu/görev/ödev atadığında veya danışan
+  bir istek gönderdiğinde karşı tarafın ekranı anında güncellenir.
+- **PDF kütüphanesi** — PDF'ler cihazda tutulur, yedeklenirken Supabase Storage'a
+  yüklenir. 2 MB dosya sınırı uygulanır.
+
+---
+
+## 5) Uygulama Özellikleri
+
+- **Giriş / Kayıt**: Supabase Auth ile e-posta + şifre.
 - **Genel Bakış**: Bugünkü randevular, risk uyarıları, istatistikler, yaklaşan randevular, açık görevler.
 - **Formlar**: Değerlendirme formu oluşturma/düzenleme/doldurma, otomatik puanlama ve risk algılama.
 - **Danışanlar**: Danışan kartları, SOAP seans notları, tedavi planı hedefleri, güvenlik planı ve acil hatlar.
@@ -52,26 +119,42 @@ Gerekli Flutter sürümü: **3.38 veya üzeri** (proje Dart 3.13 ile yazıldı).
 - **Görevler**: Açık/gecikmiş görev takibi, öncelik ve son tarih yönetimi.
 - **Sonuçlar**: Form analizleri, puan trendi grafiği, risk işaretli değerlendirmeler, aylık akış.
 - **PDF Kütüphanesi**: Kategoriler, PDF yükleme, uygulama içinde görüntüleme, yeni sekmede açma ve indirme.
-- **Ayarlar**: Profil, şifre değiştirme, PIN kilidi, JSON yedek/geri yükleme, CSV dışa aktarım, KVKK.
+- **Ayarlar**: Profil, PIN kilidi, JSON yedek/geri yükleme, CSV dışa aktarım, KVKK.
 
 ---
 
-## 4) Veri ve Gizlilik
+## 6) Veri ve Gizlilik
 
-- Veriler tarayıcıda **localStorage** (web) veya cihaz kalıcı deposunda (mobil) saklanır.
-- PDF dosyaları için tek dosya sınırı **2 MB**, toplam depolama önerisi **~5 MB**'dır.
-- **Düzenli yedek alın**: Ayarlar → Yedekleme → "Tam Yedek (JSON)". Tarayıcı verileri
-  temizlenirse yedek olmadan veriler kaybolabilir.
+- Psikologun klinik kaydı cihazda saklanır ve oturum açıldığında Supabase ile
+  senkronize edilir. **E-posta adresi ve parola uygulamaya gömülü değildir.**
+- Veri erişimi, veritabanındaki satır güvenliği (RLS) politikalarıyla kısıtlıdır:
+  her kullanıcı yalnızca kendine ait kayıtları görebilir.
+- PDF dosyaları için dosya sınırı **2 MB** uygulanır; dosyalar özel bir depolama
+  kovasında tutulur ve herkese açık değildir.
+- **Düzenli yedek alın**: Ayarlar → Yedekleme → "Tam Yedek (JSON)".
 - Bu uygulama tıbbi tanı koymaz; mesleki kararları destekleyen bir kayıt aracıdır.
 
 ---
 
-## 5) Testler (geliştiriciler için)
+## 7) Testler (geliştiriciler için)
 
 ```bash
-cd mindtrack
-flutter test      # 19 widget/akış testi
+flutter test      # akış testleri
 flutter analyze   # statik analiz
 ```
 
-Sürüm 1.0 — Flutter (Dart 3.13)
+---
+
+## 8) Sık karşılaşılan sorunlar
+
+| Belirti | Çözüm |
+| --- | --- |
+| Giriş yapılamıyor, "Sunucuya ulaşılamadı" | `--dart-define` ile `SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY` verilmeden derlenmiş. Yeniden derleyin. |
+| `relation "public.xxx" does not exist` | Migration çalıştırılmamış → [SUPABASE-KURULUM.md](SUPABASE-KURULUM.md) bölüm 2. |
+| Proje "PAUSED" görünüyor | Ücretsiz plan 7 gün hareketsizlikte projeyi duraklatır; dashboard'da **Restore**. |
+
+Ayrıntılı liste için [SUPABASE-KURULUM.md](SUPABASE-KURULUM.md) bölüm 7.
+
+---
+
+Sürüm 1.0 — Flutter (Dart 3.13) · Backend: Supabase (Postgres + Auth + Realtime + Storage)

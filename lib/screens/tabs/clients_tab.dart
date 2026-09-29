@@ -1,10 +1,8 @@
-import 'dart:math';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/data_store.dart';
+import '../../data/mindtrack_backend.dart';
 import '../../models/app_data.dart';
 import '../../models/appointment.dart';
 import '../../models/client.dart';
@@ -1804,19 +1802,16 @@ class _ClientsTabState extends State<ClientsTab> {
   }
 
   Future<void> _openHomeworkDialog(BuildContext context, Client c) async {
-    final auth = await _ensureFirebaseSession(context);
-    if (auth == null || !mounted) return;
+    final ready = await _ensureBackendSession(context);
+    if (!ready || !mounted) return;
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('${c.name} · Ödevler', style: const TextStyle()),
         content: SizedBox(
           width: 520,
-          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance
-                .collection('homework')
-                .where('psychologistId', isEqualTo: auth.uid)
-                .snapshots(),
+          child: StreamBuilder<List<Map<String, dynamic>>>(
+            stream: MindTrackBackend.instance.watchHomework(),
             builder: (ctx, snap) {
               if (snap.hasError) {
                 return Text(
@@ -1830,21 +1825,14 @@ class _ClientsTabState extends State<ClientsTab> {
                   child: Center(child: CircularProgressIndicator()),
                 );
               }
-              final items =
-                  snap.data!.docs
-                      .where((d) => d.data()['clientId'] == c.id)
-                      .toList()
-                    ..sort(
-                      (a, b) =>
-                          ((b.data()['createdAt'] as Timestamp?)
-                                      ?.millisecondsSinceEpoch ??
-                                  0)
-                              .compareTo(
-                                (a.data()['createdAt'] as Timestamp?)
-                                        ?.millisecondsSinceEpoch ??
-                                    0,
-                              ),
-                    );
+              final items = snap.data!
+                  .where((d) => d['clientId'] == c.id)
+                  .toList()
+                ..sort(
+                  (a, b) => ((b['createdAtMs'] as num?)?.toInt() ?? 0).compareTo(
+                    (a['createdAtMs'] as num?)?.toInt() ?? 0,
+                  ),
+                );
               if (items.isEmpty) {
                 return const Padding(
                   padding: EdgeInsets.symmetric(vertical: 24),
@@ -1857,7 +1845,7 @@ class _ClientsTabState extends State<ClientsTab> {
                   itemCount: items.length,
                   separatorBuilder: (_, __) => const Divider(height: 1),
                   itemBuilder: (_, i) {
-                    final d = items[i].data();
+                    final d = items[i];
                     final response = (d['response'] ?? '').toString().trim();
                     final status = (d['status'] ?? 'assigned').toString();
                     return ListTile(
@@ -1896,7 +1884,7 @@ class _ClientsTabState extends State<ClientsTab> {
           FilledButton.icon(
             onPressed: () async {
               Navigator.pop(ctx);
-              await _createHomework(context, c, auth.uid);
+              await _createHomework(context, c);
             },
             icon: const Icon(Icons.add, size: 17),
             label: const Text('Yeni Ödev', style: TextStyle()),
@@ -1909,7 +1897,6 @@ class _ClientsTabState extends State<ClientsTab> {
   Future<void> _createHomework(
     BuildContext context,
     Client c,
-    String psychologistId,
   ) async {
     final title = TextEditingController();
     final description = TextEditingController();
@@ -1955,18 +1942,13 @@ class _ClientsTabState extends State<ClientsTab> {
     description.dispose();
     if (result != true || titleValue.isEmpty) return;
     try {
-      await FirebaseFirestore.instance.collection('homework').add({
-        'psychologistId': psychologistId,
-        'clientId': c.id,
-        'clientUserId': c.clientUserId,
-        'clientEmail': c.email,
-        'title': titleValue,
-        'description': descriptionValue,
-        'status': 'assigned',
-        'response': '',
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      await MindTrackBackend.instance.assignHomework(
+        clientRef: c.id,
+        clientUid: c.clientUserId,
+        clientEmail: c.email,
+        title: titleValue,
+        description: descriptionValue,
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1974,12 +1956,12 @@ class _ClientsTabState extends State<ClientsTab> {
           ),
         );
       }
-    } on FirebaseException catch (e) {
+    } on BackendException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Ödev gönderilemedi: ${e.message ?? e.code}',
+              'Ödev gönderilemedi: ${e.message}',
               style: const TextStyle(),
             ),
           ),
@@ -1992,31 +1974,18 @@ class _ClientsTabState extends State<ClientsTab> {
     BuildContext context, {
     Client? client,
   }) async {
-    final auth = await _ensureFirebaseSession(context);
-    if (auth == null) return;
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    final random = Random.secure();
-    final code = List.generate(
-      8,
-      (_) => chars[random.nextInt(chars.length)],
-    ).join();
-    await FirebaseFirestore.instance.collection('pairingCodes').doc(code).set({
-      'psychologistId': auth.uid,
-      'psychologistEmail': widget.data.accounts.current?.email ?? '',
-      'code': code,
-      'status': 'pending',
-      'clientId': client?.id ?? '',
-      'clientUserId': client?.clientUserId ?? '',
-      'clientName': client?.name ?? '',
-      'clientEmail': client?.email ?? '',
-      'diagnosisCodes': List<String>.of(
+    final ready = await _ensureBackendSession(context);
+    if (!ready) return;
+    final code = await MindTrackBackend.instance.createPairingCode(
+      psychologistEmail: widget.data.accounts.current?.email ?? '',
+      clientRef: client?.id ?? '',
+      clientName: client?.name ?? '',
+      clientEmail: client?.email ?? '',
+      clientUid: client?.clientUserId ?? '',
+      diagnosisCodes: List<String>.of(
         client?.diagnosisCodes ?? const <String>[],
       ),
-      'createdAt': FieldValue.serverTimestamp(),
-      'expiresAt': Timestamp.fromDate(
-        DateTime.now().add(const Duration(days: 7)),
-      ),
-    });
+    );
     if (!mounted) return;
     await showDialog<void>(
       context: context,
@@ -2063,9 +2032,10 @@ class _ClientsTabState extends State<ClientsTab> {
     );
   }
 
-  Future<User?> _ensureFirebaseSession(BuildContext context) async {
-    final current = FirebaseAuth.instance.currentUser;
-    if (current != null) return current;
+  /// Yerel hesabın uzak karşılığı açık değilse şifre ister.
+  Future<bool> _ensureBackendSession(BuildContext context) async {
+    final backend = MindTrackBackend.instance;
+    if (backend.isSignedIn) return true;
     final email = widget.data.accounts.current?.email.trim().toLowerCase();
     if (email == null || email.isEmpty) {
       if (mounted) {
@@ -2075,67 +2045,31 @@ class _ClientsTabState extends State<ClientsTab> {
           ),
         );
       }
-      return null;
+      return false;
     }
-    final password = TextEditingController();
-    final confirmed = await showDialog<bool>(
+    // Diyalog kendi denetleyicisini sahiplenir; `showDialog` dönüşünü
+    // hemen dispose etmek, kapanış animasyonu sürerken hâlâ çalışan
+    // TextField'i "kullanılmış controller" hatasına yol açıyordu.
+    final password = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Firebase hesabını bağla', style: TextStyle()),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              '$email hesabıyla Firebase oturumu açılacak.',
-              style: const TextStyle(),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: password,
-              obscureText: true,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: 'Hesap şifresi'),
-              onSubmitted: (_) => Navigator.of(ctx).pop(true),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Vazgeç', style: TextStyle()),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Bağlan', style: TextStyle()),
-          ),
-        ],
-      ),
+      builder: (ctx) => _LinkAccountDialog(email: email),
     );
-    if (confirmed != true || password.text.isEmpty) {
-      password.dispose();
-      return null;
-    }
+    if (password == null || password.isEmpty) return false;
     try {
-      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: email,
-        password: password.text,
-      );
-      password.dispose();
-      return credential.user;
-    } on FirebaseAuthException catch (e) {
-      password.dispose();
+      await backend.signIn(email, password);
+      return true;
+    } on BackendException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Firebase oturumu açılamadı: ${e.message ?? e.code}',
+              'Oturum açılamadı: ${e.message}',
               style: const TextStyle(),
             ),
           ),
         );
       }
-      return null;
+      return false;
     }
   }
 
@@ -2388,6 +2322,65 @@ class _SafetyFormState extends State<_SafetyForm> {
           controller: c,
           maxLines: lines,
           decoration: InputDecoration(hintText: hint),
+        ),
+      ],
+    );
+  }
+}
+
+/// Hesabı bağlama parola istem diyalogğ. Denetleyiciyi kendi `dispose`
+/// yaşamında yok eder; böylece kapanış animasyonu boyunca TextField
+/// hâlâ kullanılır durumda kalmaz.
+class _LinkAccountDialog extends StatefulWidget {
+  const _LinkAccountDialog({required this.email});
+
+  final String email;
+
+  @override
+  State<_LinkAccountDialog> createState() => _LinkAccountDialogState();
+}
+
+class _LinkAccountDialogState extends State<_LinkAccountDialog> {
+  final TextEditingController _password = TextEditingController();
+
+  @override
+  void dispose() {
+    _password.dispose();
+    super.dispose();
+  }
+
+  void _submit() => Navigator.of(context).pop(_password.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Hesabını bağla', style: TextStyle()),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            '${widget.email} hesabıyla oturum açılacak.',
+            style: const TextStyle(),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _password,
+            obscureText: true,
+            autofocus: true,
+            decoration: const InputDecoration(labelText: 'Hesap şifresi'),
+            onSubmitted: (_) => _submit(),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Vazgeç', style: TextStyle()),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('Bağlan', style: TextStyle()),
         ),
       ],
     );

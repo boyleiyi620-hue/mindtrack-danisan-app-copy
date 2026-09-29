@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'dart:async';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-
 import '../../data/data_store.dart';
+import '../../data/mindtrack_backend.dart';
 import '../../models/app_data.dart';
 import '../../models/appointment.dart';
 import '../../theme/app_theme.dart';
@@ -27,7 +25,7 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
   String _weekStart = mondayOfIso(todayIso());
   String _q = '';
   String _filter = 'all';
-  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+  StreamSubscription<List<Map<String, dynamic>>>?
   _remoteAppointmentsSubscription;
 
   AppData get _d => widget.data.data;
@@ -45,27 +43,24 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
   }
 
   void _startRemoteAppointmentSync() {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null || uid.isEmpty) return;
-    _remoteAppointmentsSubscription = FirebaseFirestore.instance
-        .collection('psychologists')
-        .doc(uid)
-        .collection('appointments')
-        .snapshots()
+    final backend = MindTrackBackend.instance;
+    if (!backend.isSignedIn) return;
+    _remoteAppointmentsSubscription = backend
+        .watchPsychologistAppointments()
         .listen(_applyRemoteAppointments, onError: (_) {});
   }
 
-  void _applyRemoteAppointments(QuerySnapshot<Map<String, dynamic>> snapshot) {
+  void _applyRemoteAppointments(List<Map<String, dynamic>> snapshot) {
     var changed = false;
 
-    for (final doc in snapshot.docs) {
-      final data = doc.data();
+    for (final data in snapshot) {
+      final remoteId = data['id']?.toString() ?? '';
       final linkedId = data['linkedAppointmentId']?.toString() ?? '';
       final local = _d.appointments.cast<Appointment?>().firstWhere(
         (appointment) =>
             appointment != null &&
             ((linkedId.isNotEmpty && appointment.id == linkedId) ||
-                appointment.notes == 'request:${doc.id}'),
+                appointment.notes == 'request:$remoteId'),
         orElse: () => null,
       );
       if (local == null) continue;
@@ -97,7 +92,10 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
       }
     }
 
-    final linkedRequestIds = snapshot.docs.map((doc) => doc.id).toSet();
+    final linkedRequestIds = snapshot
+        .map((row) => row['id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
     for (final local in [..._d.appointments]) {
       if (!local.notes.startsWith('request:')) continue;
       final requestId = local.notes.substring('request:'.length).trim();
@@ -115,9 +113,8 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
   }
 
   DateTime? _remoteAppointmentDate(dynamic raw) {
-    if (raw is Timestamp) return raw.toDate();
     if (raw is DateTime) return raw;
-    if (raw is String) return DateTime.tryParse(raw);
+    if (raw is String) return DateTime.tryParse(raw)?.toLocal();
     if (raw is num) return DateTime.fromMillisecondsSinceEpoch(raw.toInt());
     return null;
   }
@@ -1123,7 +1120,7 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
         ..showSnackBar(
           SnackBar(
             content: Text(
-              '${group!.length} randevu silindi.',
+              '${group.length} randevu silindi.',
               style: const TextStyle(),
             ),
           ),
@@ -1165,20 +1162,13 @@ Color _appointmentStatusColor(String status) {
   }
 }
 
-Future<DocumentReference<Map<String, dynamic>>?> _remoteAppointmentRef(
-  Appointment appointment,
-) async {
-  final psychologistId = FirebaseAuth.instance.currentUser?.uid;
-  if (psychologistId == null || psychologistId.isEmpty) return null;
+/// Randevunun uzak karşılığı: not alanında saklanan `request:<id>` referansı.
+/// Bu olmadan uzak kayıt bulunamaz ve güncellenemez.
+String? _remoteAppointmentId(Appointment appointment) {
   final notes = appointment.notes;
   if (!notes.startsWith('request:')) return null;
   final requestId = notes.substring('request:'.length).trim();
-  if (requestId.isEmpty) return null;
-  return FirebaseFirestore.instance
-      .collection('psychologists')
-      .doc(psychologistId)
-      .collection('appointments')
-      .doc(requestId);
+  return requestId.isEmpty ? null : requestId;
 }
 
 Future<void> syncRemoteAppointment(
@@ -1186,16 +1176,14 @@ Future<void> syncRemoteAppointment(
   String? statusOverride,
 }) async {
   try {
-    final ref = await _remoteAppointmentRef(appointment);
-    if (ref == null) return;
-    await ref.update({
-      'status': statusOverride ?? appointment.status,
-      'date': Timestamp.fromDate(
-        DateTime.parse('${appointment.date} ${appointment.time}:00'),
-      ),
-      'linkedAppointmentId': appointment.id,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+    final requestId = _remoteAppointmentId(appointment);
+    if (requestId == null) return;
+    await MindTrackBackend.instance.updateAppointmentRequest(
+      requestId,
+      status: statusOverride ?? appointment.status,
+      at: DateTime.parse('${appointment.date} ${appointment.time}:00'),
+      linkedAppointmentId: appointment.id,
+    );
   } catch (_) {
     // Yerel kayıt korunur; çevrim içi kayıt sonraki işlemde güncellenebilir.
   }
@@ -1203,9 +1191,11 @@ Future<void> syncRemoteAppointment(
 
 Future<void> deleteRemoteAppointment(Appointment appointment) async {
   try {
-    final ref = await _remoteAppointmentRef(appointment);
-    if (ref == null) return;
-    await ref.delete();
+    // Firebase dönemindeki `DocumentReference` yerine artık satırın UUID'si
+    // doğrudan RPC'ye veriliyor.
+    final remoteId = appointment.id.trim();
+    if (remoteId.isEmpty) return;
+    await MindTrackBackend.instance.deleteAppointment(remoteId);
   } catch (_) {
     // Yerel silme korunur; uzak kayıt sonraki senkron adımında temizlenebilir.
   }

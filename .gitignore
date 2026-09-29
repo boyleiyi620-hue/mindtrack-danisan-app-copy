@@ -46,3 +46,8 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Supabase CLI
+# `supabase link` ve `supabase start` bu klasörde makineye özgü durum
+# (proje ref'i, bağlantı bilgileri) tutar; sürüm kontrolüne girmez.
+supabase/.temp/

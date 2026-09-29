@@ -20,8 +20,8 @@ android {
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "tr.mindtrack.app.danisan"
-        // Danışan ve psikolog APK’ları ayrı kurulabilir; ikisi de aynı Firebase
-        // projesinin FlutterFire seçeneklerini kullanır.
+        // Danışan ve psikolog APK'ları ayrı kurulabilir; ikisi de aynı
+        // Supabase projesine bağlanır (SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY).
         flavorDimensions += "role"
         productFlavors {
             create("client") {

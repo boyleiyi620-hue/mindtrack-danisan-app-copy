@@ -18,6 +18,26 @@ BÖLÜM 0 — ELİNDEKİ DOSYALAR
    "mindtrack" gibi basit bir yol kullan.)
 
 ----------------------------------------------------------------
+----------------------------------------------------------------
+----------------------------------------------------------------
+BÖLÜM 0.5 — SUPABASE BİLGİLERİNİ HAZIRLA (ÖNCE BU)
+----------------------------------------------------------------
+ÖNEMLİ: Uygulama artık Firebase değil, Supabase kullanıyor. Verilerinin
+bulutta saklanması için bir Supabase projesi gerekiyor. Bu kurulum
+proje klasöründeki  SUPABASE-KURULUM.md  dosyasında anlatılıyor.
+Önce o dosyayı aç ve BÖLÜM 0 → 4 arasını tamamla.
+
+Ardından şu iki değeri bul ve bir yere not et:
+
+  SUPABASE_URL       =  https://yfxepfxgiceplghlrxek.supabase.co
+  SUPABASE_PUBLISHABLE_KEY  =  panelde verilen "sb_publishable_…" publishable anahtar
+  SUPABASE_PUBLISHABLE_KEY  =  panelde verilen "sb_publishable_…" publishable anahtar
+
+  DİKKAT: "service_role" veya "secret" yazan anahtarı BURAYA YAZMA.
+  O anahtar veritabanının tamamını açar; sizde olmamalıdır.
+
+Bu iki değeri BÖLÜM 3'teki derleme komutuna yazacaksın.
+
 BÖLÜM 1 — BİLGİSAYARA FLUTTER'İ KUR
 ----------------------------------------------------------------
 1) Flutter SDK indir:
@@ -74,22 +94,32 @@ BÖLÜM 2 — PROJEYİ AÇ VE HAZIRLA
 ----------------------------------------------------------------
 BÖLÜM 3 — APK DERLE (EN ÖNEMLİ ADIM)
 ----------------------------------------------------------------
-9) Komut:
-   - Şu komutu yaz:          flutter build apk --release
+9) Önce BÖLÜM 0.5'teki iki değeri yerine koy, sonra komutu çalıştır.
+
+   PSİKOLOG APK'sı için şu komutu yaz:
+
+     flutter build apk --release --flavor psychologist --dart-define=SUPABASE_URL="https://yfxepfxgiceplghlrxek.supabase.co" --dart-define=SUPABASE_PUBLISHABLE_KEY="sb_publishable_-2LSJNP29XcL3ykiRQ8aaQ_kxZ7aKAn"
+
+   - Tırnak işaretlerini de yazmayı unutma.
+   - --dart-define=... KISMı OLMAZSA APK AÇILIR AMA GİRİŞ YAPAMAZSIN.
    - İLK ÇALIŞTIRMADA GRADLE VE MOTOR DOSYALARI İNER; 5-20 DK SÜREBİLİR.
      İnternet açık olsun, pencereyi kapatma, beklet.
    - En sonda şuna benzer bir satır çıkmalı:
-     "✓ Built build\app\outputs\flutter-apk\app-release.apk"
+     "✓ Built build\app\outputs\flutter-apk\psychologist-release.apk"
+
+   (DANİŞAN APK'sı istiyorsan --flavor psychologist yerine
+    --flavor client yaz.)
 
 10) APK'nın yeri:
-   -  flutter\mindtrack\build\app\outputs\flutter-apk\app-release.apk
+   -  flutter\mindtrack\build\app\outputs\flutter-apk\psychologist-release.apk
    - Bu dosya telefona kuracağın kurulum dosyasıdır (~50-90 MB olur,
      internetten çekilen normal Flutter motoruyla).
 
     İstersen daha küçük dosya (isteğe bağlı):
-    - flutter build apk --release --split-per-abi
+    - flutter build apk --release --flavor psychologist --split-per-abi
+      (--dart-define=... kısımlarını da yine eklemeyi unutma)
     - Çıkışta 3 ayrı APK olur; telefonların çoğu arm64-v8a kullanır:
-      app-arm64-v8a-release.apk  (bunu kur)
+      psychologist-arm64-v8a-release.apk  (bunu kur)
 
 ----------------------------------------------------------------
 BÖLÜM 4 — TELEFONA KURULUM (İKİ YOLDAN BİRİ)
@@ -111,18 +141,18 @@ YOL A — USB KABLO İLE (EN GARANTİLİ, İZİN SORDURMAZ)
       (Android Studio kurunca adb otomatik gelir; cmd'de adb yoksa
        o klasörü de Path'e ekle)
 15) Kurulum komutu:
-    - adb install -r "C:\src\mindtrack\flutter\mindtrack\build\app\outputs\flutter-apk\app-release.apk"
+    - adb install -r "C:\src\mindtrack\flutter\mindtrack\build\app\outputs\flutter-apk\psychologist-release.apk"
     - En sonda "Success" yazarsa KURULDU.
     - Telefon ana ekranında "MindTrack" ikonunu bul ve AÇ.
 
 YOL B — APK'YI TELEFONA TAŞIYIP KUR
 -----------------------------------
-16) app-release.apk dosyasını telefona taşı:
+16) psychologist-release.apk dosyasını telefona taşı:
     - USB ile bağlayıp "Dosya aktarımı" modunu seç, APK'yı
       "İndirilenler" klasörüne kopyala
     - VEYA Google Drive / kendine mesaj ile telefona indir
 17) Telefonda: Dosyalar (Files by Google) -> İndirilenler
-    -> app-release.apk dosyasına dokun
+    -> psychologist-release.apk dosyasına dokun
     - İlk seferde "Bu kaynaktan izin ver" sorarsa: anahtarı AÇ
       (Ayarlar -> Uygulamalar -> Dosyalar -> Bilinmeyen uygulamaları
        yükle -> "Bu kaynağa izin ver")
@@ -136,7 +166,7 @@ BÖLÜM 5 — SIK KARŞILAŞILAN SORUNLAR
     sonra: flutter doctor --android-licenses
 - Gradle yavaş veya indirme hatası:
     İnternetin açık olduğundan emin ol; virüs programı/güvenlik duvarı
-    engelliyorsa izin ver; sonra tekrar: flutter build apk --release
+    engelliyorsa izin ver; sonra tekrar: flutter build apk --release --flavor psychologist --dart-define=...
 - "INSTALL_FAILED_USER_RESTRICTED" hatası:
     Telefonda "Bilinmeyen kaynaklar" izni kapalı demektir.
     YOL A (adb) bunu hiç sormaz; YOL B'de ilgili uygulamaya izin ver.
@@ -150,8 +180,13 @@ BÖLÜM 6 — ÖNEMLİ NOTLAR
 ----------------------------------------------------------------
 - Uygulama varsayılan olarak "debug" anahtarıyla imzalıdır.
   Kendi telefonun için sorun değildir.
-- Verilerin TAMAMEN telefonda saklanır; internet gerekmez, hesap
-  zorunluluğu yoktur, ücret/abonelik yoktur.
+- Verilerin önce telefonda tutulur; oturum açtığında Supabase ile
+  senkronize edilir. Bu yüzden ilk kullanımda İNTERNET BAĞLANTISI gerekir.
+- Supabase ÜCRETSİZ planda çalışır; ücret/abonelik gerekmez. Proje 7 gün
+  hareketsiz kalınca duraklatılır; tekrar kullandığında panelden "Restore"
+  ile ayağa kalkar.
+- E-posta + şifre ile hesap oluşturulur. Parola uygulamada saklanmaz,
+  Supabase doğrular. Parolanı unutursan hesabına bir daha erişemezsin.
 - Başka psikologlara dağıtacaksan aynı imza anahtarını kullanman
   gerekir (ileride istenirse kendi keystore'unu oluşturmayı da
   adım adım anlatırım).

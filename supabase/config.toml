@@ -1,0 +1,44 @@
+# Supabase CLI yapılandırması.
+#
+# Bu dosya yalnızca `supabase link` / `supabase db push` komutlarının proje
+# kimliğini ve yerel geliştirme ayarlarını tutar. Gizli anahtar içermez.
+#
+# Kullanım:
+#   supabase login
+#   supabase link --project-ref <proje-ref>
+#   supabase db push
+
+project_id = "yfxepfxgiceplghlrxek"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 17
+# Uzak proje: yfxepfxgiceplghlrxek (bölge: ap-northeast-2 / Seoul)
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+site_url = "http://localhost:8080"
+# Ücretsiz planda e-posta doğrulaması kapalı bırakılabilir; kullanıcılar
+# kayıt olurken doğrulanmış e-posta gerekmez. Canlıya alırken `true` yapılması önerilir.
+enable_signup = true
+enable_email_confirmations = false
+
+[storage]
+enabled = true
+# `mindtrack-pdfs` kovası migration ile oluşturulur; CLI ile yerelde
+# çalıştırıldığında da migration aynı komutu çalıştırdığı için tekrar oluşmaz.
+file_size_limit = "20MiB"
+
+[realtime]
+enabled = true

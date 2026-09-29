@@ -1,12 +1,10 @@
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'app_scope.dart';
-import 'firebase_options.dart';
 import 'data/account_store.dart';
 import 'data/data_store.dart';
+import 'data/mindtrack_backend.dart';
 import 'screens/auth/auth_screen.dart';
 import 'screens/auth/pin_screen.dart';
 import 'screens/shell/main_shell.dart';
@@ -14,22 +12,20 @@ import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  var firebaseReady = false;
+  var backendReady = false;
   try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-    firebaseReady = true;
+    await MindTrackBackend.init();
+    backendReady = true;
   } catch (_) {
-    // Firebase başlatılamazsa Web/Android uygulaması yine açılabilmelidir.
-    // Senkronizasyon, Firebase hazır olmadığında giriş ekranında devre dışı kalır.
+    // Supabase başlatılamazsa Web/Android uygulaması yine açılabilmelidir.
+    // Senkronizasyon, arka uç hazır olmadığında giriş ekranında devre dışı kalır.
   }
   final store = await AccountStore.init();
   final data = DataStore(store);
   runApp(MindTrackApp(
     store: store,
     data: data,
-    firebaseSignedIn: firebaseReady && FirebaseAuth.instance.currentUser != null,
+    backendSignedIn: backendReady && MindTrackBackend.instance.isSignedIn,
   ));
 }
 
@@ -38,17 +34,17 @@ class MindTrackApp extends StatelessWidget {
     super.key,
     required this.store,
     required this.data,
-    this.firebaseSignedIn = true,
+    this.backendSignedIn = true,
   });
 
   final AccountStore store;
   final DataStore data;
-  final bool firebaseSignedIn;
+  final bool backendSignedIn;
 
   @override
   Widget build(BuildContext context) {
     final Widget home;
-    if (store.current != null && firebaseSignedIn) {
+    if (store.current != null && backendSignedIn) {
       home = store.isLocked
           ? PinScreen(store: store, onUnlock: () {})
           : MainShell(store: store, data: data);

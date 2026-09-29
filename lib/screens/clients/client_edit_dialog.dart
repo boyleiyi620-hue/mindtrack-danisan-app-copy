@@ -1,10 +1,8 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/data_store.dart';
-import '../../data/firebase_client_link.dart';
 import '../../data/diagnosis_codes.dart';
+import '../../data/mindtrack_backend.dart';
 import '../../models/client.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/diagnosis_picker.dart';
@@ -148,12 +146,19 @@ class _ClientEditDialogState extends State<ClientEditDialog> {
     }
     widget.data.save();
     try {
-      await syncClientDiagnosisCodes(savedClient);
-    } on FirebaseException catch (error) {
+      final backend = MindTrackBackend.instance;
+      final uid = await backend.resolveClientUserId(savedClient);
+      if (uid.isNotEmpty) {
+        await backend.setDiagnosisCodes(
+          uid,
+          List<String>.of(savedClient.diagnosisCodes),
+        );
+      }
+    } on BackendException catch (error) {
       if (mounted) {
         setState(
           () => _error =
-              'Danışan kaydedildi ancak tanı kodu aktarılmadı: ${error.message ?? error.code}',
+              'Danışan kaydedildi ancak tanı kodu aktarılmadı: ${error.message}',
         );
       }
       return;

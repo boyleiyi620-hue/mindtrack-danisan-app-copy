@@ -1,13 +1,11 @@
 import 'dart:convert';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/data_store.dart';
-import '../../data/firebase_client_link.dart';
 import '../../data/form_presets.dart';
+import '../../data/mindtrack_backend.dart';
 import '../../models/app_data.dart';
 import '../../models/assessment.dart';
 import '../../models/client.dart';
@@ -492,10 +490,11 @@ class _FormsTabState extends State<FormsTab> {
     );
     if (client == null || !mounted) return;
 
-    final auth = await _ensureFirebaseSession(context);
-    if (auth == null || !mounted) return;
+    final backend = MindTrackBackend.instance;
+    final ready = await _ensureBackendSession(context);
+    if (!ready || !mounted) return;
 
-    final clientUid = await resolveClientFirebaseUid(client);
+    final clientUid = await backend.resolveClientUserId(client);
     if (clientUid.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -509,49 +508,38 @@ class _FormsTabState extends State<FormsTab> {
     }
 
     try {
-      await FirebaseFirestore.instance
-          .collection('psychologists')
-          .doc(auth.uid)
-          .collection('tasks')
-          .add({
-            'psychologistId': auth.uid,
-            'clientId': client.id,
-            'clientFirebaseUid': clientUid,
-            'clientName': client.name,
-            'clientEmail': client.email,
-            'title': form.title,
-            'description': form.description,
-            'formId': form.id,
-            'formDraft': {
-              'id': form.id,
-              'title': form.title,
-              'description': form.description,
-              'isActive': form.isActive,
-              'questions': form.questions.map((q) => q.toJson()).toList(),
-            },
-            'done': false,
-            'response': '',
-            'structuredAnswers': <String, dynamic>{},
-            'createdAt': FieldValue.serverTimestamp(),
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
+      await backend.assignTask(
+        clientRef: client.id,
+        clientUid: clientUid,
+        clientName: client.name,
+        clientEmail: client.email,
+        title: form.title,
+        description: form.description,
+        formRef: form.id,
+        formDraft: {
+          'id': form.id,
+          'title': form.title,
+          'description': form.description,
+          'isActive': form.isActive,
+          'questions': form.questions.map((q) => q.toJson()).toList(),
+        },
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('${form.title} danışana gönderildi.')),
       );
-    } on FirebaseException catch (error) {
+    } on BackendException catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Form gönderilemedi: ${error.message ?? error.code}'),
-        ),
+        SnackBar(content: Text('Form gönderilemedi: ${error.message}')),
       );
     }
   }
 
-  Future<User?> _ensureFirebaseSession(BuildContext context) async {
-    final current = FirebaseAuth.instance.currentUser;
-    if (current != null) return current;
+  /// Yerel hesabın uzak karşılığı açık değilse şifre ister.
+  Future<bool> _ensureBackendSession(BuildContext context) async {
+    final backend = MindTrackBackend.instance;
+    if (backend.isSignedIn) return true;
 
     final email = widget.data.accounts.current?.email.trim().toLowerCase();
     if (email == null || email.isEmpty) {
@@ -560,19 +548,19 @@ class _FormsTabState extends State<FormsTab> {
           const SnackBar(content: Text('Önce hesabınızla giriş yapın.')),
         );
       }
-      return null;
+      return false;
     }
 
     final password = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Firebase hesabını bağla'),
+        title: const Text('Hesabını bağla'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('$email hesabıyla Firebase oturumu açılacak.'),
+            Text('$email hesabıyla oturum açılacak.'),
             const SizedBox(height: 12),
             TextField(
               controller: password,
@@ -597,28 +585,21 @@ class _FormsTabState extends State<FormsTab> {
     );
     if (confirmed != true || password.text.isEmpty) {
       password.dispose();
-      return null;
+      return false;
     }
 
     try {
-      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: email,
-        password: password.text,
-      );
+      await backend.signIn(email, password.text);
       password.dispose();
-      return credential.user;
-    } on FirebaseAuthException catch (error) {
+      return true;
+    } on BackendException catch (error) {
       password.dispose();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Firebase oturumu açılamadı: ${error.message ?? error.code}',
-            ),
-          ),
+          SnackBar(content: Text('Oturum açılamadı: ${error.message}')),
         );
       }
-      return null;
+      return false;
     }
   }
 

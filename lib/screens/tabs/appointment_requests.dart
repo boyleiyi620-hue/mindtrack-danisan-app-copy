@@ -1,8 +1,7 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/data_store.dart';
+import '../../data/mindtrack_backend.dart';
 import '../../models/appointment.dart';
 import '../../models/client.dart';
 import '../../theme/app_theme.dart';
@@ -17,24 +16,17 @@ class PendingAppointmentRequests extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return const SizedBox.shrink();
+    final backend = MindTrackBackend.instance;
+    if (!backend.isSignedIn) return const SizedBox.shrink();
 
-    final stream = FirebaseFirestore.instance
-        .collection('psychologists')
-        .doc(uid)
-        .collection('appointments')
-        .where('status', isEqualTo: 'pending')
-        .snapshots();
-
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: stream,
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: backend.watchPendingRequests(),
       builder: (context, snapshot) {
-        if (snapshot.hasError || !snapshot.hasData || snapshot.data!.docs.isEmpty) {
+        if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
           return const SizedBox.shrink();
         }
-        final requests = [...snapshot.data!.docs]
-          ..sort((a, b) => _requestDate(a.data()).compareTo(_requestDate(b.data())));
+        final requests = [...snapshot.data!]
+          ..sort((a, b) => _requestDate(a).compareTo(_requestDate(b)));
         return Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -90,8 +82,8 @@ class PendingAppointmentRequests extends StatelessWidget {
   }
 
   Widget _requestCard(
-      BuildContext context, DocumentSnapshot<Map<String, dynamic>> request) {
-    final raw = request.data() ?? <String, dynamic>{};
+      BuildContext context, Map<String, dynamic> request) {
+    final raw = request;
     final date = _requestDate(raw);
     final name = _requestName(raw);
     final email = raw['clientEmail']?.toString() ?? '';
@@ -159,10 +151,10 @@ class PendingAppointmentRequests extends StatelessWidget {
   }
 
   Future<void> _approve(
-      BuildContext context, DocumentSnapshot<Map<String, dynamic>> request) async {
-    final raw = request.data() ?? <String, dynamic>{};
+      BuildContext context, Map<String, dynamic> request) async {
+    final raw = request;
     final name = _requestName(raw);
-    final clientUid = raw['clientFirebaseUid']?.toString() ?? '';
+    final clientUid = raw['clientUserId']?.toString() ?? '';
     final email = raw['clientEmail']?.toString() ?? '';
     final date = _requestDate(raw);
     try {
@@ -193,15 +185,16 @@ class PendingAppointmentRequests extends StatelessWidget {
         clientId: client.id,
         type: 'therapy',
         status: 'planned',
-        notes: 'request:${request.id}',
+        notes: 'request:${request['id']}',
       );
       data.data.appointments.add(appointment);
       data.save();
-      await request.reference.update({
-        'status': 'approved',
-        'linkedAppointmentId': appointment.id,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      await MindTrackBackend.instance.updateAppointmentRequest(
+        request['id'].toString(),
+        status: 'approved',
+        at: date,
+        linkedAppointmentId: appointment.id,
+      );
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('$name randevu talebi onaylandı.')),
@@ -217,12 +210,15 @@ class PendingAppointmentRequests extends StatelessWidget {
   }
 
   Future<void> _reject(
-      BuildContext context, DocumentSnapshot<Map<String, dynamic>> request) async {
+      BuildContext context, Map<String, dynamic> request) async {
     try {
-      await request.reference.update({
-        'status': 'rejected',
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      await MindTrackBackend.instance.updateAppointmentRequest(
+        request['id'].toString(),
+        status: 'rejected',
+        at: _requestDate(request),
+        linkedAppointmentId:
+            request['linkedAppointmentId']?.toString() ?? '',
+      );
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Talep reddedildi.')),
@@ -251,9 +247,8 @@ String _requestName(Map<String, dynamic> data) {
 
 DateTime _requestDate(Map<String, dynamic> data) {
   final raw = data['date'];
-  if (raw is Timestamp) return raw.toDate();
   if (raw is DateTime) return raw;
-  if (raw is String) return DateTime.tryParse(raw) ?? DateTime(2100);
+  if (raw is String) return DateTime.tryParse(raw)?.toLocal() ?? DateTime(2100);
   if (raw is num) return DateTime.fromMillisecondsSinceEpoch(raw.toInt());
   return DateTime(2100);
 }

@@ -1,9 +1,9 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/account_store.dart';
 import '../../data/crypto_utils.dart';
 import '../../data/data_store.dart';
+import '../../data/mindtrack_backend.dart';
 import '../../models/user_account.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/error_box.dart';
@@ -69,18 +69,17 @@ class _AuthScreenState extends State<AuthScreen> {
     if (!isEmailValid(email)) throw 'Geçerli bir e-posta girin.';
     if (pass.isEmpty) throw 'Şifre boş olamaz.';
 
-    // Ortak hesap doğrulaması Firebase üzerinden yapılır. Böylece Web’de
+    // Ortak hesap doğrulaması Supabase Auth üzerinden yapılır. Böylece Web’de
     // oluşturulan hesap, ilk Android girişinde yerel kayıt bulunmasa bile açılır.
-    await _signInFirebase(email, pass);
+    await _signInBackend(email, pass);
     var u = widget.store.findByEmail(email);
     if (u == null) {
-      final firebaseUser = FirebaseAuth.instance.currentUser;
+      final backend = MindTrackBackend.instance;
       final salt = randomHex();
+      final remoteName = backend.displayName.trim();
       u = UserAccount(
-        id: firebaseUser?.uid ?? salt + DateTime.now().microsecondsSinceEpoch.toRadixString(16),
-        name: firebaseUser?.displayName?.trim().isNotEmpty == true
-            ? firebaseUser!.displayName!.trim()
-            : email.split('@').first,
+        id: backend.userId ?? salt + DateTime.now().microsecondsSinceEpoch.toRadixString(16),
+        name: remoteName.isNotEmpty ? remoteName : email.split('@').first,
         email: email,
         clinic: '',
         salt: salt,
@@ -95,28 +94,23 @@ class _AuthScreenState extends State<AuthScreen> {
     if (mounted) _goHome();
   }
 
-  Future<void> _signInFirebase(String email, String pass) async {
+  Future<void> _signInBackend(String email, String pass) async {
+    final backend = MindTrackBackend.instance;
+    // Supabase hiçbaşlatılmadıysa (yapılandırma eksik, test ortamı)
+    // uzak doğrulama yapılamaz; yerel hesapla devam edilir. `main()` de
+    // arka uç hazır değilken uygulamanın açılabilmesini öngörüyor.
+    if (!backend.isReady) return;
+
     try {
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: email,
-        password: pass,
-      );
-    } on FirebaseAuthException catch (e) {
-      if (e.code == 'user-not-found' || e.code == 'invalid-credential') {
-        try {
-          await FirebaseAuth.instance.createUserWithEmailAndPassword(
-            email: email,
-            password: pass,
-          );
-          return;
-        } on FirebaseAuthException catch (createError) {
-          if (createError.code == 'email-already-in-use') {
-            throw 'Firebase hesabı mevcut ancak şifre eşleşmiyor. Firebase hesabınızın şifresiyle giriş yapın.';
-          }
-          throw 'Firebase oturumu açılamadı: ${createError.message ?? createError.code}';
-        }
+      await backend.signIn(email, pass);
+    } on BackendException catch (e) {
+      // Hesap uzak tarafta hiç yoksa ilk girişte sessizce oluşturulur; böylece
+      // web'de açılan hesap ilk Android girişinde de tanınır.
+      if (e.message.contains('Invalid login credentials')) {
+        await backend.signUp(email, pass);
+        return;
       }
-      throw 'Firebase oturumu açılamadı: ${e.message ?? e.code}';
+      throw 'Oturum açılamadı: ${e.message}';
     }
   }
 
@@ -145,16 +139,19 @@ class _AuthScreenState extends State<AuthScreen> {
       createdAt: DateTime.now().millisecondsSinceEpoch.toDouble(),
       appMode: '', // Trigger mode selection on first login
     );
-    try {
-      await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: email.toLowerCase(),
-        password: pass,
-      );
-    } on FirebaseAuthException catch (e) {
-      if (e.code == 'email-already-in-use') {
-        throw 'Bu e-posta Firebase hesabında zaten kayıtlı. Giriş yapmayı deneyin.';
+    if (MindTrackBackend.instance.isReady) {
+      try {
+        await MindTrackBackend.instance.signUp(
+          email.toLowerCase(),
+          pass,
+          displayName: name,
+        );
+      } on BackendException catch (e) {
+        if (e.message.contains('already registered')) {
+          throw 'Bu e-posta zaten kayıtlı. Giriş yapmayı deneyin.';
+        }
+        throw 'Hesap oluşturulamadı: ${e.message}';
       }
-      throw 'Firebase hesabı oluşturulamadı: ${e.message ?? e.code}';
     }
     widget.store.addUser(u);
     widget.store.setSession(u);
