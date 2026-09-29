@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mindtrack_danisan_app/data/appointment_sync.dart';
 import 'package:mindtrack_danisan_app/models/app_data.dart';
 import 'package:mindtrack_danisan_app/models/appointment.dart';
 import 'package:mindtrack_danisan_app/models/assessment.dart';
@@ -12,50 +13,83 @@ import 'package:mindtrack_danisan_app/models/task.dart';
 
 void main() {
   test('AppData JSON gidiş-dönüş kayıpsız çalışır', () {
-    final form = FormEntry(id: 'f1', title: 'Kaygı Ölçeği', questions: [
-      FormQuestion(id: 'q1', type: 'scale', text: 'Kaygı?', scaleMax: 7),
-      FormQuestion(
+    final form = FormEntry(
+      id: 'f1',
+      title: 'Kaygı Ölçeği',
+      questions: [
+        FormQuestion(id: 'q1', type: 'scale', text: 'Kaygı?', scaleMax: 7),
+        FormQuestion(
           id: 'q2',
           type: 'multiple_choice',
           text: 'Uyku?',
-          options: ['İyi', 'Kötü']),
-    ]);
+          options: ['İyi', 'Kötü'],
+        ),
+      ],
+    );
     final client = Client(
-        id: 'c1',
-        name: 'Ayşe',
-        email: 'a@x.com',
-        phone: '555',
-        birthDate: '1990-01-01',
-        gender: 'Kadın',
-        tags: ['Kaygı'],
-        notes: 'not');
+      id: 'c1',
+      name: 'Ayşe',
+      email: 'a@x.com',
+      phone: '555',
+      birthDate: '1990-01-01',
+      gender: 'Kadın',
+      tags: ['Kaygı'],
+      notes: 'not',
+    );
     final assessment = Assessment(
-        id: 'a1',
-        clientId: 'c1',
-        formId: 'f1',
-        answers: {'q1': 4, 'q2': 'İyi'},
-        score: 12);
+      id: 'a1',
+      clientId: 'c1',
+      formId: 'f1',
+      answers: {'q1': 4, 'q2': 'İyi'},
+      score: 12,
+    );
     final appointment = Appointment(
-        id: 'ap1',
-        date: '2026-08-16',
-        time: '10:00',
-        clientId: 'c1',
-        type: 'therapy',
-        status: 'planned',
-        durationMin: 50,
-        notes: 'n',
-        repeatGroup: 'rg');
+      id: 'ap1',
+      date: '2026-08-16',
+      time: '10:00',
+      clientId: 'c1',
+      type: 'therapy',
+      status: 'planned',
+      durationMin: 50,
+      notes: 'n',
+      repeatGroup: 'rg',
+    );
     final note = Note(
-        id: 'n1', clientId: 'c1', title: 'S1', subjective: 's',
-        objective: 'o', assessment: 'a', plan: 'p', mood: 'Orta');
+      id: 'n1',
+      clientId: 'c1',
+      title: 'S1',
+      subjective: 's',
+      objective: 'o',
+      assessment: 'a',
+      plan: 'p',
+      mood: 'Orta',
+    );
     final plan = Plan(id: 'p1', clientId: 'c1', title: 'TP');
-    plan.goals.add(Goal(id: 'g1', text: 'hedef', category: 'short', status: 'achieved'));
+    plan.goals.add(
+      Goal(id: 'g1', text: 'hedef', category: 'short', status: 'achieved'),
+    );
     final task = Task(
-        id: 't1', text: 'görev', clientId: 'c1', priority: 'high', done: false);
+      id: 't1',
+      text: 'görev',
+      clientId: 'c1',
+      priority: 'high',
+      done: false,
+    );
     final doc = Document(
-        id: 'd1', clientId: 'c1', name: 'rapor.pdf', dataUrl: 'BASE64', size: 10);
+      id: 'd1',
+      clientId: 'c1',
+      name: 'rapor.pdf',
+      dataUrl: 'BASE64',
+      size: 10,
+    );
     final cat = PdfCategory(id: 'pc1', name: 'Raporlar');
-    final pdf = PdfFile(id: 'pf1', catId: 'pc1', name: 'x.pdf', dataUrl: 'B64', size: 5);
+    final pdf = PdfFile(
+      id: 'pf1',
+      catId: 'pc1',
+      name: 'x.pdf',
+      dataUrl: 'B64',
+      size: 5,
+    );
 
     final original = AppData(
       forms: [form],
@@ -96,5 +130,23 @@ void main() {
     final d = AppData.empty().toJson();
     expect(d['clients'], isEmpty);
     expect(AppData.fromJson(d).clients, isEmpty);
+  });
+
+  test('ortak randevu kimliği yalnızca talep bağlantısından çözülür', () {
+    final shared = Appointment(
+      id: 'local-1',
+      date: '2026-09-30',
+      time: '10:00',
+      notes: 'request:remote-uuid',
+    );
+    final local = Appointment(
+      id: 'local-2',
+      date: '2026-09-30',
+      time: '11:00',
+      notes: 'klinik içi not',
+    );
+
+    expect(sharedAppointmentId(shared), 'remote-uuid');
+    expect(sharedAppointmentId(local), isNull);
   });
 }

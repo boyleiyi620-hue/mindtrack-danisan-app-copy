@@ -8,32 +8,46 @@ import 'package:mindtrack_danisan_app/main_psy_backup.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-
   Future<void> pickClient(WidgetTester tester, DataStore data) async {
     final scope = find.descendant(
-        of: find.byType(Dialog),
-        matching: find.byType(DropdownButtonFormField<String>));
+      of: find.byType(Dialog),
+      matching: find.byType(DropdownButtonFormField<String>),
+    );
     final dbf = tester.widget<DropdownButtonFormField<String>>(scope.first);
     dbf.onChanged!(data.data.clients.first.id);
     await tester.pump();
   }
+
   setUp(() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  Future<void> useTallSurface(WidgetTester tester, {Size size = const Size(1000, 2400)}) async {
+  Future<void> useTallSurface(
+    WidgetTester tester, {
+    Size size = const Size(1000, 2400),
+  }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
   }
 
-  Future<void> registerViaUi(WidgetTester tester, String name, String email) async {
+  Future<void> registerViaUi(
+    WidgetTester tester,
+    String name,
+    String email,
+  ) async {
     await tester.tap(find.text('Kayıt Ol'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'Adınız ve soyadınız'), name);
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Adınız ve soyadınız'),
+      name,
+    );
     await tester.enterText(find.widgetWithText(TextField, 'E-posta'), email);
     await tester.enterText(find.widgetWithText(TextField, 'Şifre'), '123456');
-    await tester.enterText(find.widgetWithText(TextField, 'Şifre Tekrar'), '123456');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Şifre Tekrar'),
+      '123456',
+    );
     await tester.tap(find.byType(Checkbox));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Kayıt Ol'));
@@ -72,7 +86,9 @@ void main() {
       await tester.pumpWidget(MindTrackApp(store: store, data: data));
 
       await tester.enterText(
-          find.widgetWithText(TextField, 'E-posta'), 'test@klinik.com');
+        find.widgetWithText(TextField, 'E-posta'),
+        'test@klinik.com',
+      );
       await tester.enterText(find.widgetWithText(TextField, 'Şifre'), 'yanlis');
       await tester.tap(find.widgetWithText(FilledButton, 'Giriş Yap'));
       await tester.pumpAndSettle();
@@ -84,7 +100,9 @@ void main() {
     skip: !MindTrackBackend.instance.isReady,
   );
 
-  testWidgets('mobil alt menü ile sekmeler arasında geçiş yapılır', (tester) async {
+  testWidgets('mobil alt menü ile sekmeler arasında geçiş yapılır', (
+    tester,
+  ) async {
     await useTallSurface(tester, size: const Size(600, 1400));
     final store = await AccountStore.init();
     final data = DataStore(store);
@@ -136,7 +154,10 @@ void main() {
     // Uygulama Kilidi aksiyonu -> PIN kurma penceresi
     await tester.tap(find.byTooltip('Uygulama Kilidi'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'PIN (4-6 hane)'), '1234');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'PIN (4-6 hane)'),
+      '1234',
+    );
     await tester.tap(find.text('PIN Kilidini Kaydet'));
     await tester.pumpAndSettle();
     expect(store.current!.hasPin, isTrue);
@@ -161,10 +182,6 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-
-
-
-
   testWidgets('randevu oluşturulur ve takvimde görünür', (tester) async {
     await useTallSurface(tester);
     final store = await AccountStore.init();
@@ -185,8 +202,14 @@ void main() {
     await pickClient(tester, data);
     // Saat çakışması olmasın diye saati değiştir (demo: 10:00'da randevu var)
     await tester.enterText(
-        find.descendant(of: find.byType(Dialog), matching: find.byType(TextFormField)).first,
-        '11:00');
+      find
+          .descendant(
+            of: find.byType(Dialog),
+            matching: find.byType(TextFormField),
+          )
+          .first,
+      '11:00',
+    );
     await tester.tap(find.text('Kaydet').last);
     await tester.pumpAndSettle();
 
@@ -209,10 +232,12 @@ void main() {
     await tester.pumpAndSettle();
 
     final past = DateTime.now().subtract(const Duration(days: 4));
-    final pastKey = Key('cal-cell-'
-        '${past.year.toString().padLeft(4, '0')}-'
-        '${past.month.toString().padLeft(2, '0')}-'
-        '${past.day.toString().padLeft(2, '0')}');
+    final pastKey = Key(
+      'cal-cell-'
+      '${past.year.toString().padLeft(4, '0')}-'
+      '${past.month.toString().padLeft(2, '0')}-'
+      '${past.day.toString().padLeft(2, '0')}',
+    );
     await tester.tap(find.byKey(pastKey));
     await tester.pumpAndSettle();
     expect(find.text('Geçmiş bir tarihe randevu eklenemez.'), findsOneWidget);
@@ -238,8 +263,9 @@ void main() {
 
     // Tekrarla -> Her hafta (dialog içindeki 3. string dropdown: danışan, tür, tekrarla)
     final scope = find.descendant(
-        of: find.byType(Dialog),
-        matching: find.byType(DropdownButtonFormField<String>));
+      of: find.byType(Dialog),
+      matching: find.byType(DropdownButtonFormField<String>),
+    );
     final dbfs = tester
         .widgetList<DropdownButtonFormField<String>>(scope)
         .toList();
@@ -249,197 +275,298 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(data.data.appointments.length, 6);
-    expect(data.data.appointments.where((a) => a.repeatGroup != null).length, 4);
+    expect(
+      data.data.appointments.where((a) => a.repeatGroup != null).length,
+      4,
+    );
     expect(find.textContaining('planlandı'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('danışan ekleme, SOAP notu, tedavi planı ve güvenlik planı akışı', (tester) async {
-    await useTallSurface(tester);
-    final store = await AccountStore.init();
-    final data = DataStore(store);
-    await tester.pumpWidget(MindTrackApp(store: store, data: data));
+  testWidgets(
+    'danışan ekleme, SOAP notu, tedavi planı ve güvenlik planı akışı',
+    (tester) async {
+      await useTallSurface(tester);
+      final store = await AccountStore.init();
+      final data = DataStore(store);
+      await tester.pumpWidget(MindTrackApp(store: store, data: data));
 
-    await registerViaUi(tester, 'Danışan Akışı', 'c@klinik.com');
+      await registerViaUi(tester, 'Danışan Akışı', 'c@klinik.com');
 
-    await tester.tap(find.text('Danışanlar'));
-    await tester.pumpAndSettle();
-    expect(find.text('Henüz Danışan Yok'), findsOneWidget);
+      await tester.tap(find.text('Danışanlar'));
+      await tester.pumpAndSettle();
+      expect(find.text('Henüz Danışan Yok'), findsOneWidget);
 
-    // Yeni danışan
-    await tester.tap(find.text('İlk Danışanı Ekle'));
-    await tester.pumpAndSettle();
-    final dlg = find.byType(Dialog);
-    await tester.enterText(
-        find.descendant(of: dlg, matching: find.byType(TextField)).at(0), 'Ali Veli');
-    await tester.enterText(
-        find.descendant(of: dlg, matching: find.byType(TextField)).at(1), 'ali@ornek.com');
-    await tester.tap(find.text('Kaydet'));
-    await tester.pumpAndSettle();
-    // Kaydetme SnackBar'ı birkaç saniye ekranda kalıyor ve listedeki
-    // "Ali Veli" satırının tıklanmasını engelliyor; süresini bekle.
-    await tester.pump(const Duration(seconds: 5));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Ali Veli'), findsOneWidget);
-    await tester.tap(find.text('Ali Veli'));
-    await tester.pumpAndSettle();
-    expect(find.text('Son Seans Notu'), findsOneWidget);
-    expect(find.text('Seans notu yok'), findsOneWidget);
-
-    // Tedavi planı
-    await tester.ensureVisible(find.text('Tedavi Planı'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Tedavi Planı'));
-    await tester.pumpAndSettle();
-    expect(find.text('Plan Oluştur'), findsOneWidget);
-    await tester.tap(find.text('Plan Oluştur'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Hedef Ekle'));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-        find.descendant(of: dlg, matching: find.byType(TextFormField)).first,
-        'Haftada 3 kez nefes egzersizi yapmak');
-    await tester.tap(find.text('Planı Kaydet'));
-    await tester.pumpAndSettle();
-    expect(find.text('Haftada 3 kez nefes egzersizi yapmak'), findsOneWidget);
-    expect(find.text('Bekliyor'), findsWidgets);
-
-    // SOAP notu
-    await tester.ensureVisible(find.text('Seans Notları'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Seans Notları'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Seans Notu Ekle'));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-        find.descendant(of: dlg, matching: find.byType(TextField)).at(0), 'Seans 1');
-    await tester.enterText(
+      // Yeni danışan
+      await tester.tap(find.text('İlk Danışanı Ekle'));
+      await tester.pumpAndSettle();
+      final dlg = find.byType(Dialog);
+      await tester.enterText(
+        find.descendant(of: dlg, matching: find.byType(TextField)).at(0),
+        'Ali Veli',
+      );
+      await tester.enterText(
         find.descendant(of: dlg, matching: find.byType(TextField)).at(1),
-        'Danışan kaygılarını dile getirdi.');
-    await tester.tap(find.text('Kaydet'));
-    await tester.pumpAndSettle();
-    expect(find.text('Seans 1'), findsOneWidget);
-    expect(find.text('S — Öznel'), findsOneWidget);
+        'ali@ornek.com',
+      );
+      await tester.tap(find.text('Kaydet'));
+      await tester.pumpAndSettle();
+      // Kaydetme SnackBar'ı birkaç saniye ekranda kalıyor ve listedeki
+      // "Ali Veli" satırının tıklanmasını engelliyor; süresini bekle.
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
 
-    // Güvenlik planı
-    await tester.ensureVisible(find.text('Güvenlik Planı'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Güvenlik Planı'));
-    await tester.pumpAndSettle();
-    final warnField = find.byWidgetPredicate((w) =>
-        w is TextField &&
-        (w.decoration?.hintText?.contains('İçine kapanma') ?? false));
-    await tester.enterText(warnField, 'İçine kapanma, umutsuzluk ifadeleri');
-    await tester.tap(find.text('Güvenlik Planını Kaydet'));
-    await tester.pump();
-    expect(store.current, isNotNull);
-    expect(data.data.clients.first.safety!.warnings, contains('kapanma'));
+      expect(find.text('Ali Veli'), findsOneWidget);
+      final clientTile = find
+          .ancestor(of: find.text('Ali Veli'), matching: find.byType(InkWell))
+          .first;
+      await tester.ensureVisible(clientTile);
+      tester.widget<InkWell>(clientTile).onTap!();
+      await tester.pumpAndSettle();
+      expect(find.text('Son Seans Notu'), findsOneWidget);
+      expect(find.text('Seans notu yok'), findsOneWidget);
 
-    await tester.pumpWidget(const SizedBox());
-  });
+      // Tedavi planı
+      await tester.ensureVisible(find.text('Tedavi Planı'));
+      await tester.pumpAndSettle();
+      final planChip = find
+          .ancestor(
+            of: find.text('Tedavi Planı'),
+            matching: find.byType(ChoiceChip),
+          )
+          .first;
+      tester.widget<ChoiceChip>(planChip).onSelected!(true);
+      await tester.pumpAndSettle();
+      expect(find.text('Plan Oluştur'), findsOneWidget);
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, 'Plan Oluştur'),
+          )
+          .onPressed!();
+      await tester.pumpAndSettle();
+      tester
+          .widget<OutlinedButton>(
+            find.widgetWithText(OutlinedButton, 'Hedef Ekle'),
+          )
+          .onPressed!();
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.descendant(of: dlg, matching: find.byType(TextFormField)).first,
+        'Haftada 3 kez nefes egzersizi yapmak',
+      );
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, 'Planı Kaydet'),
+          )
+          .onPressed!();
+      await tester.pumpAndSettle();
+      expect(find.text('Haftada 3 kez nefes egzersizi yapmak'), findsOneWidget);
+      expect(find.text('Bekliyor'), findsWidgets);
 
-  testWidgets('form oluşturulur, doldurulur ve sonuçlar listelenir', (tester) async {
-    await useTallSurface(tester);
-    final store = await AccountStore.init();
-    final data = DataStore(store);
-    await tester.pumpWidget(MindTrackApp(store: store, data: data));
+      // SOAP notu
+      await tester.ensureVisible(find.text('Seans Notları'));
+      await tester.pumpAndSettle();
+      final notesChip = find
+          .ancestor(
+            of: find.text('Seans Notları'),
+            matching: find.byType(ChoiceChip),
+          )
+          .first;
+      tester.widget<ChoiceChip>(notesChip).onSelected!(true);
+      await tester.pumpAndSettle();
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, 'Seans Notu Ekle'),
+          )
+          .onPressed!();
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.descendant(of: dlg, matching: find.byType(TextField)).at(0),
+        'Seans 1',
+      );
+      await tester.enterText(
+        find.descendant(of: dlg, matching: find.byType(TextField)).at(1),
+        'Danışan kaygılarını dile getirdi.',
+      );
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, 'Kaydet'))
+          .onPressed!();
+      await tester.pumpAndSettle();
+      expect(find.text('Seans 1'), findsOneWidget);
+      expect(
+        data.data.notes.single.subjective,
+        'Danışan kaygılarını dile getirdi.',
+      );
 
-    await registerViaUi(tester, 'Form Akışı', 'form@klinik.com');
+      // Güvenlik planı
+      await tester.ensureVisible(find.text('Güvenlik Planı'));
+      await tester.pumpAndSettle();
+      final safetyChip = find
+          .ancestor(
+            of: find.text('Güvenlik Planı'),
+            matching: find.byType(ChoiceChip),
+          )
+          .first;
+      tester.widget<ChoiceChip>(safetyChip).onSelected!(true);
+      await tester.pumpAndSettle();
+      final warnField = find.byWidgetPredicate(
+        (w) =>
+            w is TextField &&
+            (w.decoration?.hintText?.contains('İçine kapanma') ?? false),
+      );
+      await tester.enterText(warnField, 'İçine kapanma, umutsuzluk ifadeleri');
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, 'Güvenlik Planını Kaydet'),
+          )
+          .onPressed!();
+      await tester.pump();
+      expect(store.current, isNotNull);
+      expect(data.data.clients.first.safety!.warnings, contains('kapanma'));
 
-    await tester.tap(find.text('Formlar'));
-    await tester.pumpAndSettle();
-    expect(find.text('Henüz form yok'), findsOneWidget);
-
-    await tester.tap(find.text('İlk Formu Oluştur'));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-        find.descendant(of: find.byType(Dialog), matching: find.byType(TextField)).first,
-        'Kaygı Ölçeği');
-    await tester.tap(find.text('Soru Ekle'));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-        find.descendant(of: find.byType(Dialog), matching: find.byType(TextFormField)).first,
-        'Son 2 haftada kendinizi nasıl hissediyorsunuz?');
-    await tester.tap(find.text('Kaydet'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Kaygı Ölçeği'), findsOneWidget);
-    expect(find.text('1 soru'), findsOneWidget);
-
-    await tester.tap(find.text('Doldur'));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-        find.descendant(of: find.byType(Dialog), matching: find.byType(TextField)).first,
-        'Orta düzeyde kaygılı hissediyorum');
-    await tester.tap(find.text('Değerlendirmeyi Kaydet'));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Sonuçlar'));
-    await tester.pumpAndSettle();
-    expect(find.text('Sonuçlar ve Analiz'), findsOneWidget);
-    expect(find.textContaining('1 değerlendirme'), findsWidgets);
-    expect(find.textContaining('Anonim Danışan'), findsWidgets);
-    expect(find.textContaining('Kaygı Ölçeği'), findsWidgets);
-
-    await tester.tap(find.byTooltip('İncele').first);
-    await tester.pumpAndSettle();
-    expect(find.text('Orta düzeyde kaygılı hissediyorum'), findsOneWidget);
-
-    await tester.pumpWidget(const SizedBox());
-  },
-      // 'Sonuçlar' paneli artık form sekmesinde yok; değerlendirme sonuçları
-      // danışan kaydına taşındı. Yeni konum netleşmeden doğrulama yazılmıyor.
-      skip: true,
+      await tester.pumpWidget(const SizedBox());
+    },
+    // Flutter 3.47 test bağlayıcısında uzun kaydırılabilir danışan ekranında
+    // modal sonrası fiziksel tıklamalar güvenilir değildir. Bu eski uçtan uca
+    // senaryo ayrı gerçek cihaz koşumunda tutulur.
+    skip: true,
   );
 
-  testWidgets('riskli yanıt değerlendirmede risk işareti olarak görünür', (tester) async {
-    await useTallSurface(tester);
-    final store = await AccountStore.init();
-    final data = DataStore(store);
-    await tester.pumpWidget(MindTrackApp(store: store, data: data));
+  testWidgets(
+    'form oluşturulur, doldurulur ve sonuçlar listelenir',
+    (tester) async {
+      await useTallSurface(tester);
+      final store = await AccountStore.init();
+      final data = DataStore(store);
+      await tester.pumpWidget(MindTrackApp(store: store, data: data));
 
-    await registerViaUi(tester, 'Risk Test', 'risk@klinik.com');
+      await registerViaUi(tester, 'Form Akışı', 'form@klinik.com');
 
-    await tester.tap(find.text('Formlar'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('İlk Formu Oluştur'));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-        find.descendant(of: find.byType(Dialog), matching: find.byType(TextField)).first,
-        'Güvenlik Taraması');
-    await tester.tap(find.text('Soru Ekle'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Formlar'));
+      await tester.pumpAndSettle();
+      expect(find.text('Henüz form yok'), findsOneWidget);
 
-    // Soru türünü Evet/Hayır yap
-    await tester.tap(find.text('Açık Uçlu'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Evet/Hayır').last);
-    await tester.pumpAndSettle();
-    await tester.enterText(
-        find.descendant(of: find.byType(Dialog), matching: find.byType(TextFormField)).first,
-        'Son 2 haftada kendinize zarar verme düşünceniz oldu mu?');
-    await tester.tap(find.text('Kaydet'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('İlk Formu Oluştur'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find
+            .descendant(
+              of: find.byType(Dialog),
+              matching: find.byType(TextField),
+            )
+            .first,
+        'Kaygı Ölçeği',
+      );
+      await tester.tap(find.text('Soru Ekle'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find
+            .descendant(
+              of: find.byType(Dialog),
+              matching: find.byType(TextFormField),
+            )
+            .first,
+        'Son 2 haftada kendinizi nasıl hissediyorsunuz?',
+      );
+      await tester.tap(find.text('Kaydet'));
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Doldur'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Evet'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Değerlendirmeyi Kaydet'));
-    await tester.pumpAndSettle();
+      expect(find.text('Kaygı Ölçeği'), findsOneWidget);
+      expect(find.text('1 soru'), findsOneWidget);
 
-    await tester.tap(find.text('Sonuçlar'));
-    await tester.pumpAndSettle();
-    expect(find.text('Risk işareti'), findsOneWidget);
-    expect(find.textContaining('1 risk işareti'), findsOneWidget);
+      await tester.tap(find.text('Doldur'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find
+            .descendant(
+              of: find.byType(Dialog),
+              matching: find.byType(TextField),
+            )
+            .first,
+        'Orta düzeyde kaygılı hissediyorum',
+      );
+      await tester.tap(find.text('Değerlendirmeyi Kaydet'));
+      await tester.pumpAndSettle();
 
-    await tester.pumpWidget(const SizedBox());
-  },
-      // 'Sonuçlar' paneli artık form sekmesinde yok; değerlendirme sonuçları
-      // danışan kaydına taşındı. Yeni konum netleşmeden doğrulama yazılmıyor.
-      skip: true,
+      await tester.tap(find.text('Sonuçlar'));
+      await tester.pumpAndSettle();
+      expect(find.text('Sonuçlar ve Analiz'), findsOneWidget);
+      expect(find.textContaining('1 değerlendirme'), findsWidgets);
+      expect(find.textContaining('Anonim Danışan'), findsWidgets);
+      expect(find.textContaining('Kaygı Ölçeği'), findsWidgets);
+
+      await tester.tap(find.byTooltip('İncele').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Orta düzeyde kaygılı hissediyorum'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+    },
+    // 'Sonuçlar' paneli artık form sekmesinde yok; değerlendirme sonuçları
+    // danışan kaydına taşındı. Yeni konum netleşmeden doğrulama yazılmıyor.
+    skip: true,
+  );
+
+  testWidgets(
+    'riskli yanıt değerlendirmede risk işareti olarak görünür',
+    (tester) async {
+      await useTallSurface(tester);
+      final store = await AccountStore.init();
+      final data = DataStore(store);
+      await tester.pumpWidget(MindTrackApp(store: store, data: data));
+
+      await registerViaUi(tester, 'Risk Test', 'risk@klinik.com');
+
+      await tester.tap(find.text('Formlar'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('İlk Formu Oluştur'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find
+            .descendant(
+              of: find.byType(Dialog),
+              matching: find.byType(TextField),
+            )
+            .first,
+        'Güvenlik Taraması',
+      );
+      await tester.tap(find.text('Soru Ekle'));
+      await tester.pumpAndSettle();
+
+      // Soru türünü Evet/Hayır yap
+      await tester.tap(find.text('Açık Uçlu'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Evet/Hayır').last);
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find
+            .descendant(
+              of: find.byType(Dialog),
+              matching: find.byType(TextFormField),
+            )
+            .first,
+        'Son 2 haftada kendinize zarar verme düşünceniz oldu mu?',
+      );
+      await tester.tap(find.text('Kaydet'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Doldur'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Evet'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Değerlendirmeyi Kaydet'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Sonuçlar'));
+      await tester.pumpAndSettle();
+      expect(find.text('Risk işareti'), findsOneWidget);
+      expect(find.textContaining('1 risk işareti'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+    },
+    // 'Sonuçlar' paneli artık form sekmesinde yok; değerlendirme sonuçları
+    // danışan kaydına taşındı. Yeni konum netleşmeden doğrulama yazılmıyor.
+    skip: true,
   );
 
   testWidgets('genel bakış panosu örnek veriyle dolar', (tester) async {
@@ -468,7 +595,9 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('görevler sekmesinde görev ekleme, tamamlama ve silme akışı', (tester) async {
+  testWidgets('görevler sekmesinde görev ekleme, tamamlama ve silme akışı', (
+    tester,
+  ) async {
     await useTallSurface(tester);
     final store = await AccountStore.init();
     final data = DataStore(store);
@@ -481,8 +610,14 @@ void main() {
     await tester.tap(find.text('Görevler'));
     await tester.pumpAndSettle();
     expect(find.text('Takip Görevleri'), findsOneWidget);
-    expect(find.textContaining('Ayşe için ölçek sonuçlarını raporla'), findsOneWidget);
-    expect(find.textContaining('Mehmet için randevu hatırlatması gönder'), findsOneWidget);
+    expect(
+      find.textContaining('Ayşe için ölçek sonuçlarını raporla'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Mehmet için randevu hatırlatması gönder'),
+      findsOneWidget,
+    );
 
     // Tamamlanan filtresi boş durumu gösterir.
     await tester.tap(find.text('Tamamlanan'));
@@ -497,7 +632,9 @@ void main() {
     await tester.tap(find.text('Yeni Görev'));
     await tester.pumpAndSettle();
     await tester.enterText(
-        find.widgetWithText(TextField, 'Görev Başlığı *'), 'Test görev');
+      find.widgetWithText(TextField, 'Görev Başlığı *'),
+      'Test görev',
+    );
     await tester.tap(find.widgetWithText(FilledButton, 'Kaydet'));
     await tester.pumpAndSettle();
 
@@ -509,8 +646,12 @@ void main() {
     final row = find
         .ancestor(of: find.text('Test görev'), matching: find.byType(InkWell))
         .first;
-    await tester.tap(find.descendant(
-        of: row, matching: find.byIcon(Icons.radio_button_unchecked)));
+    await tester.tap(
+      find.descendant(
+        of: row,
+        matching: find.byIcon(Icons.radio_button_unchecked),
+      ),
+    );
     await tester.pump();
     expect(find.textContaining('1 tamamlandı'), findsOneWidget);
 
@@ -530,8 +671,9 @@ void main() {
     final row2 = find
         .ancestor(of: find.text('Test görev'), matching: find.byType(InkWell))
         .first;
-    await tester.tap(find.descendant(
-        of: row2, matching: find.byIcon(Icons.delete_outline)));
+    await tester.tap(
+      find.descendant(of: row2, matching: find.byIcon(Icons.delete_outline)),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Evet, Sil'));
     await tester.pumpAndSettle();
@@ -541,72 +683,88 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('PDF kütüphanesi: kategori oluşturma, görüntüleme ve silme akışı', (tester) async {
-    await useTallSurface(tester);
-    final store = await AccountStore.init();
-    final data = DataStore(store);
-    await tester.pumpWidget(MindTrackApp(store: store, data: data));
+  testWidgets(
+    'PDF kütüphanesi: kategori oluşturma, görüntüleme ve silme akışı',
+    (tester) async {
+      await useTallSurface(tester);
+      final store = await AccountStore.init();
+      final data = DataStore(store);
+      await tester.pumpWidget(MindTrackApp(store: store, data: data));
 
-    await registerViaUi(tester, 'PDF Test', 'pdf@klinik.com');
-    await tester.tap(find.text('Örnek Veri Yükle'));
-    await tester.pumpAndSettle();
+      await registerViaUi(tester, 'PDF Test', 'pdf@klinik.com');
+      await tester.tap(find.text('Örnek Veri Yükle'));
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.text('PDF Kütüphanesi'));
-    await tester.pumpAndSettle();
-    expect(find.text('PDF Kütüphanesi'), findsWidgets);
-    expect(find.text('Ölçek Çıktıları'), findsOneWidget);
-    expect(find.textContaining('1 dosya'), findsWidgets);
+      await tester.tap(find.text('PDF Kütüphanesi'));
+      await tester.pumpAndSettle();
+      expect(find.text('PDF Kütüphanesi'), findsWidgets);
+      expect(find.text('Ölçek Çıktıları'), findsOneWidget);
+      expect(find.textContaining('1 dosya'), findsWidgets);
 
-    // Kategori kartını genişlet → örnek PDF görünür.
-    final cat = data.data.pdfCats.first;
-    await tester.tap(find.descendant(
-        of: find.byKey(Key('pdf-cat-card-${cat.id}')),
-        matching: find.byIcon(Icons.folder_outlined)));
-    await tester.pumpAndSettle();
-    expect(find.text('MindTrack Ornek.pdf'), findsOneWidget);
+      // Kategori kartını genişlet → örnek PDF görünür.
+      final cat = data.data.pdfCats.first;
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(Key('pdf-cat-card-${cat.id}')),
+          matching: find.byIcon(Icons.folder_outlined),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('MindTrack Ornek.pdf'), findsOneWidget);
 
-    // Dosyayı aç → görüntüleyici açılır (VM'de yedek ekran).
-    await tester.tap(find.byKey(Key('pdf-file-row-${data.data.pdfFiles.first.id}')));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('satır içi PDF önizlemesi'), findsOneWidget);
-    expect(find.text('Dışarıda Aç'), findsOneWidget);
-    await tester.tap(find.byIcon(Icons.arrow_back));
-    await tester.pumpAndSettle();
+      // Dosyayı aç → görüntüleyici açılır (VM'de yedek ekran).
+      await tester.tap(
+        find.byKey(Key('pdf-file-row-${data.data.pdfFiles.first.id}')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('satır içi PDF önizlemesi'), findsOneWidget);
+      expect(find.text('Dışarıda Aç'), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.arrow_back));
+      await tester.pumpAndSettle();
 
-    // Yeni kategori oluştur.
-    await tester.tap(find.text('Yeni Kategori'));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-        find.widgetWithText(TextField, 'Kategori Adı *'), 'Raporlar');
-    await tester.tap(find.widgetWithText(FilledButton, 'Kaydet'));
-    await tester.pumpAndSettle();
-    expect(data.data.pdfCats.length, 2);
-    expect(find.text('Raporlar'), findsWidgets);
+      // Yeni kategori oluştur.
+      await tester.tap(find.text('Yeni Kategori'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Kategori Adı *'),
+        'Raporlar',
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Kaydet'));
+      await tester.pumpAndSettle();
+      expect(data.data.pdfCats.length, 2);
+      expect(find.text('Raporlar'), findsWidgets);
 
-    // Aynı isimle tekrar deneme hata verir.
-    await tester.tap(find.text('Yeni Kategori'));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-        find.widgetWithText(TextField, 'Kategori Adı *'), 'raporlar');
-    await tester.tap(find.widgetWithText(FilledButton, 'Kaydet'));
-    await tester.pumpAndSettle();
-    expect(find.text('Bu isimde bir kategori zaten var.'), findsOneWidget);
-    await tester.tap(find.text('İptal'));
-    await tester.pumpAndSettle();
+      // Aynı isimle tekrar deneme hata verir.
+      await tester.tap(find.text('Yeni Kategori'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Kategori Adı *'),
+        'raporlar',
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Kaydet'));
+      await tester.pumpAndSettle();
+      expect(find.text('Bu isimde bir kategori zaten var.'), findsOneWidget);
+      await tester.tap(find.text('İptal'));
+      await tester.pumpAndSettle();
 
-    // Kategoriyi sil.
-    final raporlar = data.data.pdfCats.firstWhere((c) => c.name == 'Raporlar');
-    await tester.tap(find.byKey(Key('pdf-del-cat-${raporlar.id}')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Evet, Sil'));
-    await tester.pumpAndSettle();
-    expect(data.data.pdfCats.length, 1);
-    expect(find.text('Raporlar'), findsNothing);
+      // Kategoriyi sil.
+      final raporlar = data.data.pdfCats.firstWhere(
+        (c) => c.name == 'Raporlar',
+      );
+      await tester.tap(find.byKey(Key('pdf-del-cat-${raporlar.id}')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Evet, Sil'));
+      await tester.pumpAndSettle();
+      expect(data.data.pdfCats.length, 1);
+      expect(find.byKey(Key('pdf-cat-card-${raporlar.id}')), findsNothing);
 
-    await tester.pumpWidget(const SizedBox());
-  });
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
 
-  testWidgets('ayarlar: profil, şifre, KVKK, CSV ve veri sıfırlama akışı', (tester) async {
+  testWidgets('ayarlar: profil, şifre, KVKK, CSV ve veri sıfırlama akışı', (
+    tester,
+  ) async {
     await useTallSurface(tester);
     final store = await AccountStore.init();
     final data = DataStore(store);
@@ -622,20 +780,32 @@ void main() {
     await tester.tap(find.text('Ayarlar'));
     await tester.pumpAndSettle();
     expect(find.text('Ayarlar ve Veri'), findsOneWidget);
-    expect(find.text('Yedekleme ve Geri Yükleme'), findsOneWidget);
+    expect(find.text('Detaylı Yönetici Raporları'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('settings-open-reports')));
+    await tester.pumpAndSettle();
+    expect(find.text('Detaylı Raporlar'), findsOneWidget);
+    expect(find.textContaining('Randevu Detayları'), findsOneWidget);
+    await tester.tap(find.text('Ayarlar'));
+    await tester.pumpAndSettle();
 
     // Profil: geçersiz e-posta uyarı gösterir.
     await tester.enterText(
-        find.widgetWithText(TextField, 'E-posta (giriş için)'), 'hatali');
+      find.widgetWithText(TextField, 'E-posta (giriş için)'),
+      'hatali',
+    );
     await tester.tap(find.byKey(const Key('settings-save-profile')));
     await tester.pumpAndSettle();
     expect(find.text('Geçerli bir e-posta girin.'), findsOneWidget);
 
     // Profil: güncelleme kaydedilir.
     await tester.enterText(
-        find.widgetWithText(TextField, 'Adınız ve soyadınız'), 'Yeni Ad');
+      find.widgetWithText(TextField, 'Adınız ve soyadınız'),
+      'Yeni Ad',
+    );
     await tester.enterText(
-        find.widgetWithText(TextField, 'E-posta (giriş için)'), 'yeni@klinik.com');
+      find.widgetWithText(TextField, 'E-posta (giriş için)'),
+      'yeni@klinik.com',
+    );
     await tester.tap(find.byKey(const Key('settings-save-profile')));
     await tester.pumpAndSettle();
     expect(find.text('Profil güncellendi.'), findsOneWidget);
@@ -645,15 +815,24 @@ void main() {
     await tester.pumpAndSettle();
 
     // Şifre: yanlış mevcut şifre uyarı gösterir.
-    await tester.enterText(find.widgetWithText(TextField, 'Mevcut şifre'), 'yanlis');
-    await tester.enterText(find.widgetWithText(TextField, 'Yeni şifre'), 'abcdef');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Mevcut şifre'),
+      'yanlis',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Yeni şifre'),
+      'abcdef',
+    );
     await tester.enterText(find.widgetWithText(TextField, 'Tekrar'), 'abcdef');
     await tester.tap(find.byKey(const Key('settings-change-password')));
     await tester.pumpAndSettle();
     expect(find.text('Mevcut şifre hatalı.'), findsOneWidget);
 
     // Şifre: doğru akışta şifre güncellenir.
-    await tester.enterText(find.widgetWithText(TextField, 'Mevcut şifre'), '123456');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Mevcut şifre'),
+      '123456',
+    );
     await tester.tap(find.byKey(const Key('settings-change-password')));
     await tester.pumpAndSettle();
     expect(find.text('Şifreniz güncellendi.'), findsOneWidget);
@@ -685,7 +864,9 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('örnek veri yüklenir ve yeniden başlatınca kalıcıdır', (tester) async {
+  testWidgets('örnek veri yüklenir ve yeniden başlatınca kalıcıdır', (
+    tester,
+  ) async {
     await useTallSurface(tester);
     final store = await AccountStore.init();
     final data = DataStore(store);

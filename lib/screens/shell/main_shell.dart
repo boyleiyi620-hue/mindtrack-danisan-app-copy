@@ -13,6 +13,7 @@ import '../tabs/clients_tab.dart';
 import '../tabs/forms_tab.dart';
 import '../tabs/overview_tab.dart';
 import '../tabs/pdfs_tab.dart';
+import '../tabs/reports_tab.dart';
 import '../tabs/settings_tab.dart';
 import '../tabs/tasks_tab.dart';
 import '../tabs/finance_tab.dart';
@@ -61,6 +62,13 @@ const _navItems = [
     Icons.calendar_month_outlined,
     Icons.calendar_month,
     'Takvim, randevu planlama ve tekrarlı randevular burada olacak.',
+  ),
+  _NavItem(
+    'reports',
+    'Raporlar',
+    Icons.bar_chart_outlined,
+    Icons.bar_chart,
+    'Yönetim paylaşımı için dönemsel randevu raporları burada olacak.',
   ),
   _NavItem(
     'tasks',
@@ -402,7 +410,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
                 ),
                 SizedBox(height: 6),
                 Text(
-                  'Tüm hasta ve değerlendirme verileriniz yalnızca bu cihazda saklanır.',
+                  'Klinik verileriniz bağlı sunucu hesabıyla eşitlenir.',
                   style: TextStyle(
                     fontSize: 11.5,
                     color: AppColors.muted,
@@ -526,6 +534,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
       FormsTab(data: widget.data),
       ClientsTab(data: widget.data, onNavigate: _goTab),
       AppointmentsTab(data: widget.data),
+      ReportsTab(data: widget.data),
       TasksTab(data: widget.data),
       PdfsTab(data: widget.data),
     ];

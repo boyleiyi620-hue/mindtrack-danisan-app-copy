@@ -39,8 +39,10 @@ class PendingAppointmentRequests extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  const Icon(Icons.notifications_active_outlined,
-                      color: AppColors.warning),
+                  const Icon(
+                    Icons.notifications_active_outlined,
+                    color: AppColors.warning,
+                  ),
                   const SizedBox(width: 8),
                   const Expanded(
                     child: Text(
@@ -81,8 +83,7 @@ class PendingAppointmentRequests extends StatelessWidget {
     );
   }
 
-  Widget _requestCard(
-      BuildContext context, Map<String, dynamic> request) {
+  Widget _requestCard(BuildContext context, Map<String, dynamic> request) {
     final raw = request;
     final date = _requestDate(raw);
     final name = _requestName(raw);
@@ -100,26 +101,36 @@ class PendingAppointmentRequests extends StatelessWidget {
         children: [
           CircleAvatar(
             backgroundColor: AppColors.primarySoft,
-            child: Text(_initials(name),
-                style: const TextStyle(
-                    color: AppColors.primaryDark, fontWeight: FontWeight.w800)),
+            child: Text(
+              _initials(name),
+              style: const TextStyle(
+                color: AppColors.primaryDark,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(name,
-                    style: const TextStyle(
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.text)),
+                Text(
+                  name,
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.text,
+                  ),
+                ),
                 const SizedBox(height: 3),
                 Text(
                   '${_dateTimeLabel(date)}${email.isEmpty ? '' : ' · $email'}',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 11.5, color: AppColors.muted),
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: AppColors.muted,
+                  ),
                 ),
                 const SizedBox(height: 9),
                 Wrap(
@@ -131,14 +142,16 @@ class PendingAppointmentRequests extends StatelessWidget {
                       icon: const Icon(Icons.check, size: 15),
                       label: const Text('Onayla'),
                       style: FilledButton.styleFrom(
-                          backgroundColor: AppColors.success),
+                        backgroundColor: AppColors.success,
+                      ),
                     ),
                     OutlinedButton.icon(
                       onPressed: () => _reject(context, request),
                       icon: const Icon(Icons.close, size: 15),
                       label: const Text('Reddet'),
                       style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.danger),
+                        foregroundColor: AppColors.danger,
+                      ),
                     ),
                   ],
                 ),
@@ -151,29 +164,32 @@ class PendingAppointmentRequests extends StatelessWidget {
   }
 
   Future<void> _approve(
-      BuildContext context, Map<String, dynamic> request) async {
+    BuildContext context,
+    Map<String, dynamic> request,
+  ) async {
     final raw = request;
     final name = _requestName(raw);
     final clientUid = raw['clientUserId']?.toString() ?? '';
     final email = raw['clientEmail']?.toString() ?? '';
     final date = _requestDate(raw);
     try {
-      Client? client;
+      Client? existingClient;
       for (final candidate in data.data.clients) {
         if (clientUid.isNotEmpty && candidate.clientUserId == clientUid) {
-          client = candidate;
+          existingClient = candidate;
           break;
         }
       }
-      if (client == null) {
-        client = Client(
-          id: data.newId(),
-          clientUserId: clientUid,
-          name: name,
-          email: email,
-        );
-        data.data.clients.add(client);
-      } else {
+      final isNewClient = existingClient == null;
+      final client =
+          existingClient ??
+          Client(
+            id: data.newId(),
+            clientUserId: clientUid,
+            name: name,
+            email: email,
+          );
+      if (!isNewClient) {
         client.name = name;
         if (email.isNotEmpty) client.email = email;
       }
@@ -187,14 +203,18 @@ class PendingAppointmentRequests extends StatelessWidget {
         status: 'planned',
         notes: 'request:${request['id']}',
       );
-      data.data.appointments.add(appointment);
-      data.save();
-      await MindTrackBackend.instance.updateAppointmentRequest(
+      // Ortak satır önce sunucuda planlı duruma geçer; danışanın Realtime
+      // ekranı bunu anında görür. Yerel takvim kaydı aynı kimliği referanslar.
+      await MindTrackBackend.instance.approveAppointmentRequest(
         request['id'].toString(),
-        status: 'approved',
         at: date,
         linkedAppointmentId: appointment.id,
       );
+      if (isNewClient) {
+        data.data.clients.add(client);
+      }
+      data.data.appointments.add(appointment);
+      data.save();
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('$name randevu talebi onaylandı.')),
@@ -202,33 +222,33 @@ class PendingAppointmentRequests extends StatelessWidget {
       }
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Talep onaylanamadı: $error')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Talep onaylanamadı: $error')));
       }
     }
   }
 
   Future<void> _reject(
-      BuildContext context, Map<String, dynamic> request) async {
+    BuildContext context,
+    Map<String, dynamic> request,
+  ) async {
     try {
-      await MindTrackBackend.instance.updateAppointmentRequest(
+      await MindTrackBackend.instance.updateSharedAppointment(
         request['id'].toString(),
         status: 'rejected',
         at: _requestDate(request),
-        linkedAppointmentId:
-            request['linkedAppointmentId']?.toString() ?? '',
+        linkedAppointmentId: request['linkedAppointmentId']?.toString() ?? '',
       );
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Talep reddedildi.')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Talep reddedildi.')));
       }
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Talep reddedilemedi: $error')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Talep reddedilemedi: $error')));
       }
     }
   }
@@ -263,8 +283,12 @@ String _time(DateTime value) =>
     '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
 
 String _initials(String value) {
-  final parts = value.split(RegExp(r'\s+')).where((part) => part.isNotEmpty).toList();
+  final parts = value
+      .split(RegExp(r'\s+'))
+      .where((part) => part.isNotEmpty)
+      .toList();
   if (parts.isEmpty) return '?';
   if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
-  return '${parts.first.substring(0, 1)}${parts.last.substring(0, 1)}'.toUpperCase();
+  return '${parts.first.substring(0, 1)}${parts.last.substring(0, 1)}'
+      .toUpperCase();
 }

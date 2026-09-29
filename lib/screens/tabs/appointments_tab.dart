@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'dart:async';
 
+import '../../data/appointment_sync.dart';
 import '../../data/data_store.dart';
 import '../../data/mindtrack_backend.dart';
 import '../../models/app_data.dart';
@@ -1050,6 +1051,10 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
   }
 
   Future<void> _confirmDelete(BuildContext context, Appointment a) async {
+    if (sharedAppointmentId(a) != null) {
+      await _cancelSharedAppointment(context, a);
+      return;
+    }
     final group = a.repeatGroup == null
         ? null
         : _d.appointments.where((x) => x.repeatGroup == a.repeatGroup).toList();
@@ -1111,22 +1116,18 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
       deleteWhole = false;
     }
     if (deleteWhole) {
-      for (final item in group!) {
-        await deleteRemoteAppointment(item);
-      }
       _d.appointments.removeWhere((x) => x.repeatGroup == a.repeatGroup);
       messenger
         ..hideCurrentSnackBar()
         ..showSnackBar(
           SnackBar(
             content: Text(
-              '${group.length} randevu silindi.',
+              '${group!.length} randevu silindi.',
               style: const TextStyle(),
             ),
           ),
         );
     } else {
-      await deleteRemoteAppointment(a);
       _d.appointments.removeWhere((x) => x.id == a.id);
       messenger
         ..hideCurrentSnackBar()
@@ -1135,6 +1136,64 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
         );
     }
     widget.data.save();
+  }
+
+  Future<void> _cancelSharedAppointment(
+    BuildContext context,
+    Appointment appointment,
+  ) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Ortak randevuyu iptal et', style: TextStyle()),
+        content: const Text(
+          'Bu randevu iptal olarak kaydedilecek ve danışan ekranında da anında iptal edildi olarak görünecek. Devam edilsin mi?',
+          style: TextStyle(height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Vazgeç', style: TextStyle()),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Randevuyu İptal Et', style: TextStyle()),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    final previous = appointment.status;
+    appointment.status = 'cancelled';
+    try {
+      await syncSharedAppointment(appointment);
+      widget.data.save();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Randevu iptal edildi ve danışana iletildi.',
+              style: TextStyle(),
+            ),
+          ),
+        );
+      }
+    } catch (_) {
+      appointment.status = previous;
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Randevu sunucuda iptal edilemedi. Lütfen tekrar deneyin.',
+              style: TextStyle(),
+            ),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+      }
+    }
   }
 
   void _toast(BuildContext context, String msg, {bool isError = false}) {
@@ -1159,45 +1218,6 @@ Color _appointmentStatusColor(String status) {
       return AppColors.danger;
     default:
       return AppColors.warning;
-  }
-}
-
-/// Randevunun uzak karşılığı: not alanında saklanan `request:<id>` referansı.
-/// Bu olmadan uzak kayıt bulunamaz ve güncellenemez.
-String? _remoteAppointmentId(Appointment appointment) {
-  final notes = appointment.notes;
-  if (!notes.startsWith('request:')) return null;
-  final requestId = notes.substring('request:'.length).trim();
-  return requestId.isEmpty ? null : requestId;
-}
-
-Future<void> syncRemoteAppointment(
-  Appointment appointment, {
-  String? statusOverride,
-}) async {
-  try {
-    final requestId = _remoteAppointmentId(appointment);
-    if (requestId == null) return;
-    await MindTrackBackend.instance.updateAppointmentRequest(
-      requestId,
-      status: statusOverride ?? appointment.status,
-      at: DateTime.parse('${appointment.date} ${appointment.time}:00'),
-      linkedAppointmentId: appointment.id,
-    );
-  } catch (_) {
-    // Yerel kayıt korunur; çevrim içi kayıt sonraki işlemde güncellenebilir.
-  }
-}
-
-Future<void> deleteRemoteAppointment(Appointment appointment) async {
-  try {
-    // Firebase dönemindeki `DocumentReference` yerine artık satırın UUID'si
-    // doğrudan RPC'ye veriliyor.
-    final remoteId = appointment.id.trim();
-    if (remoteId.isEmpty) return;
-    await MindTrackBackend.instance.deleteAppointment(remoteId);
-  } catch (_) {
-    // Yerel silme korunur; uzak kayıt sonraki senkron adımında temizlenebilir.
   }
 }
 
@@ -1328,8 +1348,17 @@ class _AppointmentDialogState extends State<AppointmentDialog> {
       existing.type = _type;
       existing.status = _status;
       existing.notes = _notes.text.trim();
+      try {
+        await syncSharedAppointment(existing);
+      } catch (_) {
+        setState(() {
+          _error =
+              'Ortak randevu sunucuda güncellenemedi. Lütfen tekrar deneyin.';
+        });
+        return;
+      }
       widget.data.save();
-      await syncRemoteAppointment(existing);
+      if (!mounted) return;
       Navigator.of(context).pop();
       widget.onSaved?.call('Randevu kaydedildi.');
       return;

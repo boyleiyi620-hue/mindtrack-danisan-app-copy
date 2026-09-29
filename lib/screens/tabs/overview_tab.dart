@@ -28,8 +28,6 @@ class OverviewTab extends StatefulWidget {
 }
 
 class _OverviewTabState extends State<OverviewTab> {
-  bool _dismissBackup = false;
-
   UserAccount get _u => widget.account;
   DataStore get _data => widget.data;
   AppData get _d => widget.data.data;
@@ -70,10 +68,6 @@ class _OverviewTabState extends State<OverviewTab> {
               _header(context, firstName, todayAppts.length, doneToday, today),
               const SizedBox(height: 14),
               PendingAppointmentRequests(data: _data),
-              if (_showBackupReminder()) ...[
-                const SizedBox(height: 14),
-                _backupReminder(context),
-              ],
               const SizedBox(height: 16),
               _statsGrid(context),
               const SizedBox(height: 18),
@@ -172,125 +166,6 @@ class _OverviewTabState extends State<OverviewTab> {
                 ],
               );
       },
-    );
-  }
-
-  // ---------------- Yedek hatırlatma ----------------
-  bool _showBackupReminder() {
-    if (_dismissBackup) return false;
-    if (_d.clients.isEmpty && _d.forms.isEmpty) return false;
-    if (_u.lastBackupAt > 0) {
-      final diff = DateTime.now().difference(
-        DateTime.fromMillisecondsSinceEpoch(_u.lastBackupAt.toInt()),
-      );
-      if (diff.inDays < 14) return false;
-    }
-    return true;
-  }
-
-  Widget _backupReminder(BuildContext context) {
-    final ago = _u.lastBackupAt > 0 ? timeAgo(_u.lastBackupAt) : 'alınmamış';
-    final buttons = Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        FilledButton.icon(
-          onPressed: () => widget.onNavigate?.call('settings'),
-          icon: const Icon(Icons.download, size: 15),
-          label: const Text('Yedek Al', style: TextStyle(fontSize: 13)),
-        ),
-        OutlinedButton.icon(
-          onPressed: () => setState(() => _dismissBackup = true),
-          icon: const Icon(Icons.close, size: 15),
-          label: const Text('Gizle', style: TextStyle(fontSize: 13)),
-        ),
-      ],
-    );
-    final content = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Düzenli yedek alın',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 13.5,
-            fontWeight: FontWeight.w800,
-            color: AppColors.text,
-          ),
-        ),
-        const SizedBox(height: 3),
-        Text(
-          'Son yedek: $ago. Sağlık verileriniz bu cihazda saklanıyor; periyodik yedek almanızı öneririz.',
-          maxLines: 3,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 12, color: AppColors.text2),
-        ),
-      ],
-    );
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: AppColors.warningSoft,
-        borderRadius: BorderRadius.circular(AppSizes.radius),
-        border: Border.all(color: const Color(0xFFECD9A8)),
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 560;
-          if (compact) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(
-                        Icons.storage,
-                        color: AppColors.warning,
-                        size: 21,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(child: content),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                buttons,
-              ],
-            );
-          }
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.storage,
-                  color: AppColors.warning,
-                  size: 21,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(child: content),
-              const SizedBox(width: 10),
-              buttons,
-            ],
-          );
-        },
-      ),
     );
   }
 
@@ -559,10 +434,7 @@ class _OverviewTabState extends State<OverviewTab> {
             IconButton(
               tooltip: 'Tamamlandı',
               visualDensity: VisualDensity.compact,
-              onPressed: () {
-                a.status = 'done';
-                _data.save();
-              },
+              onPressed: () => _setAppointmentStatus(context, a, 'done'),
               icon: const Icon(
                 Icons.check_circle_outline,
                 size: 19,
@@ -572,10 +444,7 @@ class _OverviewTabState extends State<OverviewTab> {
             IconButton(
               tooltip: 'Gelmedi',
               visualDensity: VisualDensity.compact,
-              onPressed: () {
-                a.status = 'noshow';
-                _data.save();
-              },
+              onPressed: () => _setAppointmentStatus(context, a, 'noshow'),
               icon: const Icon(
                 Icons.cancel_outlined,
                 size: 19,
@@ -586,6 +455,28 @@ class _OverviewTabState extends State<OverviewTab> {
         ],
       ),
     );
+  }
+
+  Future<void> _setAppointmentStatus(
+    BuildContext context,
+    Appointment appointment,
+    String status,
+  ) async {
+    try {
+      await _data.updateAppointmentStatus(appointment, status);
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Randevu durumu sunucuda güncellenemedi. Lütfen tekrar deneyin.',
+              style: TextStyle(),
+            ),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+      }
+    }
   }
 
   // ---------------- Açık görevler ----------------
@@ -791,7 +682,7 @@ class _OverviewTabState extends State<OverviewTab> {
       _Quick(Icons.assignment_outlined, 'Yeni Form', 'forms'),
       _Quick(Icons.person_add_alt, 'Yeni Danışan', 'clients'),
       _Quick(Icons.event_available, 'Randevu Planla', 'appointments'),
-      _Quick(Icons.download_outlined, 'Veri Yedekle', 'settings'),
+      _Quick(Icons.bar_chart_outlined, 'Rapor Oluştur', 'reports'),
       _Quick(Icons.folder_open, 'Danışan Dosyası', 'clients'),
     ];
     return Column(

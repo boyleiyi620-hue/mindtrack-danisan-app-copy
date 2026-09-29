@@ -93,21 +93,19 @@ class MindTrackBackend {
   Stream<Map<String, dynamic>?> watchState() {
     final uid = userId;
     if (uid == null) return Stream<Map<String, dynamic>?>.value(null);
-    return _watchOne(
-      'psychologist_state',
-      {'psychologist_id': uid},
-      selector: (r) => r['data'] as Map<String, dynamic>?,
-    );
+    return _watchOne('psychologist_state', {
+      'psychologist_id': uid,
+    }, selector: (r) => r['data'] as Map<String, dynamic>?);
   }
 
   Future<void> saveState(Map<String, dynamic> data) async {
     final uid = userId;
     if (uid == null) return;
     await _guard(() async {
-      await _db.from('psychologist_state').upsert(
-        {'psychologist_id': uid, 'data': data},
-        onConflict: 'psychologist_id',
-      );
+      await _db.from('psychologist_state').upsert({
+        'psychologist_id': uid,
+        'data': data,
+      }, onConflict: 'psychologist_id');
     });
   }
 
@@ -116,11 +114,7 @@ class MindTrackBackend {
   Stream<Map<String, dynamic>?> watchPatient() {
     final uid = userId;
     if (uid == null) return Stream<Map<String, dynamic>?>.value(null);
-    return _watchOne(
-      'patients',
-      {'id': uid},
-      selector: _legacyPatient,
-    );
+    return _watchOne('patients', {'id': uid}, selector: _legacyPatient);
   }
 
   /// Profil alanlarını birleştirerek yazar (yalnızca allow-list'li sütunlar).
@@ -138,7 +132,10 @@ class MindTrackBackend {
     };
     if (payload.isEmpty) return;
     await _guard(() async {
-      await _db.from('patients').upsert({'id': uid, ...payload}, onConflict: 'id');
+      await _db.from('patients').upsert({
+        'id': uid,
+        ...payload,
+      }, onConflict: 'id');
     });
   }
 
@@ -162,7 +159,10 @@ class MindTrackBackend {
   }
 
   /// Eşleşme sonrası danışanın bağlı olduğu psikologu yazar.
-  Future<void> linkPsychologist(String psychologistId, {String clientRef = ''}) async {
+  Future<void> linkPsychologist(
+    String psychologistId, {
+    String clientRef = '',
+  }) async {
     final uid = userId;
     if (uid == null) return;
     await _guard(() async {
@@ -223,14 +223,19 @@ class MindTrackBackend {
   /// atomik bir işlem içinde gerçekleşir.
   Future<PairingClaim> claimPairingCode(String code) async {
     return _guard(() async {
-      final result = await _db.rpc('claim_pairing_code', params: {'p_code': code});
+      final result = await _db.rpc(
+        'claim_pairing_code',
+        params: {'p_code': code},
+      );
       final map = Map<String, dynamic>.from(result as Map);
       return PairingClaim(
         psychologistId: map['psychologistId']?.toString() ?? '',
         clientRef: map['clientRef']?.toString() ?? '',
         diagnosisCodes:
-            (map['diagnosisCodes'] as List?)?.map((e) => e.toString()).toList() ??
-                const <String>[],
+            (map['diagnosisCodes'] as List?)
+                ?.map((e) => e.toString())
+                .toList() ??
+            const <String>[],
       );
     });
   }
@@ -253,18 +258,20 @@ class MindTrackBackend {
 
     String find({String? clientRef, String? email}) {
       for (final row in rows.reversed) {
-        final matchesRef = clientRef != null &&
+        final matchesRef =
+            clientRef != null &&
             clientRef.isNotEmpty &&
             (row['client_ref']?.toString() ?? '') == clientRef;
-        final matchesEmail = email != null &&
+        final matchesEmail =
+            email != null &&
             email.isNotEmpty &&
-            (row['client_email']?.toString().trim().toLowerCase() ??
-                    '') ==
+            (row['client_email']?.toString().trim().toLowerCase() ?? '') ==
                 email.toLowerCase();
         if (!matchesRef && !matchesEmail) continue;
         final uid = row['client_uid']?.toString().trim() ?? '';
         final status = row['status']?.toString() ?? '';
-        if (uid.isNotEmpty && (status.isEmpty || status == 'paired')) return uid;
+        if (uid.isNotEmpty && (status.isEmpty || status == 'paired'))
+          return uid;
       }
       return '';
     }
@@ -282,15 +289,18 @@ class MindTrackBackend {
   Stream<List<Map<String, dynamic>>> watchClientAppointments() {
     final uid = userId;
     if (uid == null) return Stream.value(const []);
-    return _watch('appointments', {'client_uid': uid}, rowMapper: _legacyAppointment);
+    return _watch('appointments', {
+      'client_uid': uid,
+    }, rowMapper: _legacyAppointment);
   }
 
   /// Psikologun tüm randevuları (onaylananlar ve talepler dahil).
   Stream<List<Map<String, dynamic>>> watchPsychologistAppointments() {
     final uid = userId;
     if (uid == null) return Stream.value(const []);
-    return _watch('appointments', {'psychologist_id': uid},
-        rowMapper: _legacyAppointment);
+    return _watch('appointments', {
+      'psychologist_id': uid,
+    }, rowMapper: _legacyAppointment);
   }
 
   /// Psikologun bekleyen randevu talepleri. Realtime filtresi tek sütun
@@ -298,59 +308,69 @@ class MindTrackBackend {
   Stream<List<Map<String, dynamic>>> watchPendingRequests() {
     final uid = userId;
     if (uid == null) return Stream.value(const []);
-    return _watch('appointments', {'psychologist_id': uid}, rowMapper: (r) {
-      if ((r['status']?.toString() ?? '') != 'pending') return null;
-      return _legacyAppointment(r);
-    });
+    return _watch(
+      'appointments',
+      {'psychologist_id': uid},
+      rowMapper: (r) {
+        if ((r['status']?.toString() ?? '') != 'pending') return null;
+        return _legacyAppointment(r);
+      },
+    );
   }
 
-  Future<String> createAppointmentRequest({
-    required String clientName,
-    required String clientFirstName,
-    required String clientLastName,
-    required String clientEmail,
-    required DateTime at,
-  }) async {
-    final uid = userId;
-    final psychId = userId;
-    if (uid == null || psychId == null) {
+  /// Danışan adına talep kaydı oluşturur. Psikolog ve danışan kimlikleri
+  /// istemciden güvenilmez şekilde alınmaz; RPC bunları `patients` eşleşmesinden
+  /// sunucu tarafında çözer.
+  Future<String> createAppointmentRequest({required DateTime at}) async {
+    if (userId == null) {
       throw BackendException('Oturum bulunamadı.');
     }
-    late String id;
-    await _guard(() async {
-      final rows = await _db
-          .from('appointments')
-          .insert({
-            'psychologist_id': psychId,
-            'client_uid': uid,
-            'client_name': clientName,
-            'client_first_name': clientFirstName,
-            'client_last_name': clientLastName,
-            'client_email': clientEmail,
-            'appointment_at': at.toUtc().toIso8601String(),
-            'status': 'pending',
-            'type': 'request',
-          })
-          .select('id')
-          .single();
-      id = (rows as Map)['id'].toString();
+    return _guard(() async {
+      final id = await _db.rpc(
+        'create_appointment_request',
+        params: {'p_appointment_at': at.toUtc().toIso8601String()},
+      );
+      return id.toString();
     });
-    return id;
   }
 
-  /// Psikolog bir talebi onaylar/günceller.
-  Future<void> updateAppointmentRequest(
+  /// Psikolog bekleyen talebi planlı ortak randevuya dönüştürür.
+  Future<void> approveAppointmentRequest(
+    String id, {
+    required DateTime at,
+    required String linkedAppointmentId,
+  }) async {
+    await _guard(() async {
+      await _db.rpc(
+        'approve_appointment_request',
+        params: {
+          'p_id': id,
+          'p_appointment_at': at.toUtc().toIso8601String(),
+          'p_linked_appointment_id': linkedAppointmentId,
+        },
+      );
+    });
+  }
+
+  /// Psikologun ortak randevuda yaptığı durum veya saat değişikliğini yazar.
+  /// Aynı satır danışan tarafından izlendiği için Realtime ile iki uygulama
+  /// anında aynı sonucu görür.
+  Future<void> updateSharedAppointment(
     String id, {
     required String status,
     required DateTime at,
     required String linkedAppointmentId,
   }) async {
     await _guard(() async {
-      await _db.from('appointments').update({
-        'status': status,
-        'appointment_at': at.toUtc().toIso8601String(),
-        'linked_appointment_id': linkedAppointmentId,
-      }).eq('id', id);
+      await _db.rpc(
+        'update_shared_appointment',
+        params: {
+          'p_id': id,
+          'p_status': status,
+          'p_appointment_at': at.toUtc().toIso8601String(),
+          'p_linked_appointment_id': linkedAppointmentId,
+        },
+      );
     });
   }
 
@@ -430,11 +450,10 @@ class MindTrackBackend {
     required Map<String, dynamic> answers,
   }) async {
     await _guard(() async {
-      await _db.rpc('submit_task', params: {
-        'p_id': id,
-        'p_response': response,
-        'p_answers': answers,
-      });
+      await _db.rpc(
+        'submit_task',
+        params: {'p_id': id, 'p_response': response, 'p_answers': answers},
+      );
     });
   }
 
@@ -443,7 +462,9 @@ class MindTrackBackend {
   Stream<List<Map<String, dynamic>>> watchHomework() {
     final uid = userId;
     if (uid == null) return Stream.value(const []);
-    return _watch('homework', {'psychologist_id': uid}, rowMapper: _legacyHomework);
+    return _watch('homework', {
+      'psychologist_id': uid,
+    }, rowMapper: _legacyHomework);
   }
 
   Future<void> assignHomework({
@@ -471,10 +492,10 @@ class MindTrackBackend {
 
   Future<void> submitHomework(String id, String response) async {
     await _guard(() async {
-      await _db.rpc('submit_homework', params: {
-        'p_id': id,
-        'p_response': response,
-      });
+      await _db.rpc(
+        'submit_homework',
+        params: {'p_id': id, 'p_response': response},
+      );
     });
   }
 
@@ -485,7 +506,9 @@ class MindTrackBackend {
     if (uid == null) throw BackendException('Oturum bulunamadı.');
     return _guard(() async {
       final path = '$uid/$fileId';
-      await _db.storage.from(pdfBucket).uploadBinary(
+      await _db.storage
+          .from(pdfBucket)
+          .uploadBinary(
             path,
             bytes,
             fileOptions: const FileOptions(
@@ -589,7 +612,9 @@ class MindTrackBackend {
       }
     }
 
-    channel = _db.channel('mt:$table:${filters.entries.map((e) => '${e.key}=${e.value}').join('|')}');
+    channel = _db.channel(
+      'mt:$table:${filters.entries.map((e) => '${e.key}=${e.value}').join('|')}',
+    );
     final firstKey = filters.keys.first;
     channel.onPostgresChanges(
       event: PostgresChangeEvent.all,
@@ -633,7 +658,9 @@ class MindTrackBackend {
     }
 
     final firstKey = filters.keys.first;
-    channel = _db.channel('mt1:$table:${filters.entries.map((e) => '${e.key}=${e.value}').join('|')}');
+    channel = _db.channel(
+      'mt1:$table:${filters.entries.map((e) => '${e.key}=${e.value}').join('|')}',
+    );
     channel.onPostgresChanges(
       event: PostgresChangeEvent.all,
       schema: 'public',
@@ -658,60 +685,60 @@ class MindTrackBackend {
   // --------------------------------------------- satır → eski alan adları ---
 
   Map<String, dynamic>? _legacyPatient(Map<String, dynamic> r) => {
-        'consented': r['consented'] == true,
-        'displayName': r['display_name'],
-        'firstName': r['first_name'],
-        'lastName': r['last_name'],
-        'name': r['display_name'],
-        'email': r['email'],
-        'psychologistId': r['psychologist_id'],
-        'localClientId': r['client_ref'],
-        'diagnosisCodes': r['diagnosis_codes'],
-      };
+    'consented': r['consented'] == true,
+    'displayName': r['display_name'],
+    'firstName': r['first_name'],
+    'lastName': r['last_name'],
+    'name': r['display_name'],
+    'email': r['email'],
+    'psychologistId': r['psychologist_id'],
+    'localClientId': r['client_ref'],
+    'diagnosisCodes': r['diagnosis_codes'],
+  };
 
   Map<String, dynamic>? _legacyAppointment(Map<String, dynamic> r) => {
-        'id': r['id'],
-        'clientUserId': r['client_uid'],
-        'clientRef': r['client_ref'],
-        'clientName': r['client_name'],
-        'clientFirstName': r['client_first_name'],
-        'clientLastName': r['client_last_name'],
-        'clientEmail': r['client_email'],
-        'date': r['appointment_at'],
-        'status': r['status'],
-        'type': r['type'],
-        'linkedAppointmentId': r['linked_appointment_id'],
-        'cancelledBy': r['cancelled_by'],
-        'createdAtMs': _asMillis(r['created_at']),
-      };
+    'id': r['id'],
+    'clientUserId': r['client_uid'],
+    'clientRef': r['client_ref'],
+    'clientName': r['client_name'],
+    'clientFirstName': r['client_first_name'],
+    'clientLastName': r['client_last_name'],
+    'clientEmail': r['client_email'],
+    'date': r['appointment_at'],
+    'status': r['status'],
+    'type': r['type'],
+    'linkedAppointmentId': r['linked_appointment_id'],
+    'cancelledBy': r['cancelled_by'],
+    'createdAtMs': _asMillis(r['created_at']),
+  };
 
   Map<String, dynamic>? _legacyTask(Map<String, dynamic> r) => {
-        'id': r['id'],
-        'clientId': r['client_ref'],
-        'clientUserId': r['client_uid'],
-        'clientName': r['client_name'],
-        'clientEmail': r['client_email'],
-        'title': r['title'],
-        'description': r['description'],
-        'formId': r['form_ref'],
-        'formDraft': r['form_draft'],
-        'done': r['done'],
-        'response': r['response'],
-        'structuredAnswers': r['structured_answers'],
-        'createdAtMs': _asMillis(r['created_at']),
-      };
+    'id': r['id'],
+    'clientId': r['client_ref'],
+    'clientUserId': r['client_uid'],
+    'clientName': r['client_name'],
+    'clientEmail': r['client_email'],
+    'title': r['title'],
+    'description': r['description'],
+    'formId': r['form_ref'],
+    'formDraft': r['form_draft'],
+    'done': r['done'],
+    'response': r['response'],
+    'structuredAnswers': r['structured_answers'],
+    'createdAtMs': _asMillis(r['created_at']),
+  };
 
   Map<String, dynamic>? _legacyHomework(Map<String, dynamic> r) => {
-        'id': r['id'],
-        'clientId': r['client_ref'],
-        'clientUserId': r['client_uid'],
-        'clientEmail': r['client_email'],
-        'title': r['title'],
-        'description': r['description'],
-        'status': r['status'],
-        'response': r['response'],
-        'createdAtMs': _asMillis(r['created_at']),
-      };
+    'id': r['id'],
+    'clientId': r['client_ref'],
+    'clientUserId': r['client_uid'],
+    'clientEmail': r['client_email'],
+    'title': r['title'],
+    'description': r['description'],
+    'status': r['status'],
+    'response': r['response'],
+    'createdAtMs': _asMillis(r['created_at']),
+  };
 
   /// `timestamptz` alanlarını epoch milisaniyesine çevirir; arayüzde sıralama
   /// için sayısal karşılaştırma gerekiyor.

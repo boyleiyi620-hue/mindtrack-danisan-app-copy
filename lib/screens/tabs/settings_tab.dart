@@ -1,6 +1,3 @@
-import 'dart:convert';
-
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/crypto_utils.dart';
@@ -12,7 +9,7 @@ import '../../utils/formats.dart';
 import '../auth/pin_setup_dialog.dart';
 import '../settings/data_io.dart';
 
-/// Ayarlar ve Veri — profil, şifre, PIN kilidi, yedekleme, dışa aktarım, KVKK.
+/// Ayarlar ve Veri — profil, şifre, PIN kilidi, raporlama, dışa aktarım, KVKK.
 class SettingsTab extends StatefulWidget {
   const SettingsTab({
     super.key,
@@ -85,7 +82,7 @@ class _SettingsTabState extends State<SettingsTab> {
               ),
               const SizedBox(height: 4),
               const Text(
-                'Hesap, yedekleme ve gizlilik yönetimi',
+                'Hesap, dışa aktarım, raporlama ve gizlilik yönetimi',
                 style: TextStyle(fontSize: 13.5, color: AppColors.muted),
               ),
               const SizedBox(height: 18),
@@ -107,7 +104,7 @@ class _SettingsTabState extends State<SettingsTab> {
                   final right = Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _backupCard(),
+                      _reportCard(),
                       const SizedBox(height: 16),
                       _exportCard(),
                       const SizedBox(height: 16),
@@ -552,173 +549,35 @@ class _SettingsTabState extends State<SettingsTab> {
     if (mounted) setState(() {});
   }
 
-  // ---------------- Yedekleme ----------------
-  Widget _backupCard() {
-    final kb = (widget.data.sizeBytes / 1024).clamp(1.0, 1e9).round();
+  // ---------------- Raporlama ----------------
+  Widget _reportCard() {
     return _card(
-      Icons.storage_outlined,
-      'Yedekleme ve Geri Yükleme',
+      Icons.bar_chart_outlined,
+      'Detaylı Yönetici Raporları',
       Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            'Tüm verileriniz bu cihazda saklanıyor (yaklaşık $kb KB). Cihaz değiştirmeden veya veri kaybı riskine karşı düzenli yedek alın.'
-            '${_u.lastBackupAt > 0 ? '\nSon yedek: ${fmtDateTime(_u.lastBackupAt)}' : ''}',
-            style: const TextStyle(
+          const Text(
+            'Seçtiğiniz hafta veya ay için randevuları, danışan bilgilerini ve durum dağılımını uygulama temasında hazırlayın.',
+            style: TextStyle(
               fontSize: 12.5,
               color: AppColors.text2,
               height: 1.6,
             ),
           ),
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 10,
-            runSpacing: 8,
-            children: [
-              FilledButton.icon(
-                key: const Key('settings-backup-json'),
-                onPressed: _backupJson,
-                icon: const Icon(Icons.download_outlined, size: 16),
-                label: const Text('Tam Yedek (JSON)', style: TextStyle()),
-              ),
-              OutlinedButton.icon(
-                key: const Key('settings-restore-backup'),
-                onPressed: _restoreBackup,
-                icon: const Icon(Icons.upload_file_outlined, size: 16),
-                label: const Text('Yedekten Geri Yükle', style: TextStyle()),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          const Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(Icons.shield_outlined, size: 13, color: AppColors.muted),
-              SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  'Yedek dosyanızın güvenli bir yerde saklandığından emin olun; içinde kişisel veriler vardır.',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    color: AppColors.muted,
-                    height: 1.5,
-                  ),
-                ),
-              ),
-            ],
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton.icon(
+              key: const Key('settings-open-reports'),
+              onPressed: () => widget.onNavigate?.call('reports'),
+              icon: const Icon(Icons.insights_outlined, size: 16),
+              label: const Text('Raporlara Git', style: TextStyle()),
+            ),
           ),
         ],
       ),
     );
-  }
-
-  Future<void> _backupJson() async {
-    final messenger = ScaffoldMessenger.of(context);
-    final payload = <String, Object?>{
-      'app': 'MindTrack',
-      'version': 2,
-      'userId': _u.id,
-      'exportedAt': DateTime.now().toIso8601String(),
-      'profile': {'name': _u.name, 'clinic': _u.clinic, 'email': _u.email},
-      'data': _d.toJson(),
-    };
-    final content = const JsonEncoder.withIndent('  ').convert(payload);
-    final ok = await saveTextFile(
-      'mindtrack-yedek-${todayIso()}.json',
-      content,
-      'application/json',
-    );
-    if (!ok) {
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text('Yedek dosyası oluşturulamadı.', style: TextStyle()),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: AppColors.danger,
-        ),
-      );
-      return;
-    }
-    _u.lastBackupAt = DateTime.now().millisecondsSinceEpoch.toDouble();
-    widget.data.accounts.updateUser(_u);
-    widget.onProfileChanged?.call();
-    messenger.showSnackBar(
-      const SnackBar(
-        content: Text('Yedek dosyası indirildi.', style: TextStyle()),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
-  Future<void> _restoreBackup() async {
-    final messenger = ScaffoldMessenger.of(context);
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Yedekten Geri Yükle', style: TextStyle()),
-        content: const Text(
-          'Mevcut tüm veriler seçeceğiniz yedek dosyasındaki verilerle değiştirilecek. Bu işlem geri alınamaz. Devam etmek istiyor musunuz?',
-          style: TextStyle(height: 1.5),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Vazgeç', style: TextStyle()),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Devam Et', style: TextStyle()),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
-    try {
-      final f = await FilePicker.pickFile(
-        dialogTitle: 'Yedek Dosyası Seç',
-        type: FileType.custom,
-        allowedExtensions: ['json'],
-      );
-      if (f == null) return;
-      final content = utf8.decode(await f.readAsBytes(), allowMalformed: true);
-      final obj = jsonDecode(content);
-      final dataObj = obj is Map && obj.containsKey('data') ? obj['data'] : obj;
-      if (dataObj is! Map ||
-          !(dataObj['forms'] is List || dataObj['clients'] is List)) {
-        throw const FormatException('Biçim tanınmadı');
-      }
-      final restored = AppData.fromJson(Map<String, dynamic>.from(dataObj));
-      _d.forms = restored.forms;
-      _d.clients = restored.clients;
-      _d.assessments = restored.assessments;
-      _d.appointments = restored.appointments;
-      _d.notes = restored.notes;
-      _d.plans = restored.plans;
-      _d.tasks = restored.tasks;
-      _d.documents = restored.documents;
-      _d.pdfCats = restored.pdfCats;
-      _d.pdfFiles = restored.pdfFiles;
-      widget.data.save();
-      _u.lastBackupAt = DateTime.now().millisecondsSinceEpoch.toDouble();
-      widget.data.accounts.updateUser(_u);
-      widget.onProfileChanged?.call();
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text('Yedek başarıyla geri yüklendi.', style: TextStyle()),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } catch (_) {
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Geri yükleme başarısız: geçersiz dosya.',
-            style: TextStyle(),
-          ),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: AppColors.danger,
-        ),
-      );
-    }
   }
 
   // ---------------- Dışa Aktarım ----------------
@@ -1017,7 +876,7 @@ class _SettingsTabState extends State<SettingsTab> {
           ),
           const SizedBox(height: 12),
           const Text(
-            'Bu uygulama bir klinik takip aracıdır; tıbbi tanı koymaz. Verileriniz yalnızca bu cihazda saklanır ve hiçbir sunucuya gönderilmez. Tarayıcı verilerini temizlerseniz yedek almadan veriler silinebilir.',
+            'Bu uygulama bir klinik takip aracıdır; tıbbi tanı koymaz. Klinik verileriniz bağlı sunucu hesabında saklanır ve cihazlar arasında senkronize edilir. Bu nedenle yalnızca yetkili kişilerle paylaşım yapın.',
             style: TextStyle(
               fontSize: 12.5,
               color: AppColors.text2,
@@ -1068,10 +927,10 @@ class _SettingsTabState extends State<SettingsTab> {
         ),
         content: const SingleChildScrollView(
           child: Text(
-            '1. Veri Sorumlusu: MindTrack bir yerel uygulamadır; veri sorumlusu kullanan psikologdur. Uygulama sağlayıcısı olarak verilerinize erişimimiz yoktur.\n\n'
+            '1. Veri Sorumlusu: Veri sorumlusu uygulamayı kullanan psikolog/klinik işletmesidir.\n\n'
             '2. İşlenen Veriler: Danışan ad-soyad, iletişim bilgileri, değerlendirme cevapları, seans notları ve tedavi planı bilgileri.\n\n'
             '3. İşleme Amacı: Klinik süreç yönetimi, değerlendirme takibi ve tedavi planlaması.\n\n'
-            '4. Saklama: Tüm veriler yalnızca kullanılan cihazın deposunda saklanır; hiçbir sunucuya aktarılmaz. Veriler silindiğinde kaybolur.\n\n'
+            '4. Saklama: Klinik kayıtlar bağlı sunucu hesabında ve çalışma cihazındaki uygulama önbelleğinde saklanabilir. Yetkisiz erişimi önlemek için hesap bilgilerinizi paylaşmayın.\n\n'
             '5. Güvenlik: Şifreler tek yönlü özetleme (SHA-256) ile saklanır. Cihaz düzeyinde ek koruma için işletim sisteminizin disk şifrelemesini etkinleştirmeniz önerilir.\n\n'
             '6. Haklarınız: KVKK kapsamında verilere erişim, düzeltme ve silme haklarınızı bu uygulamanın Ayarlar bölümünden kullanabilirsiniz.\n\n'
             'Uyarı: Bu uygulama tıbbi tanı veya tedavi aracı değildir; bir sağlık profesyonelinin mesleki kararlarını destekleyen bir kayıt aracıdır.',

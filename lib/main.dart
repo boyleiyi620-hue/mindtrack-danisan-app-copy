@@ -555,10 +555,9 @@ class ClientAppointments extends StatelessWidget {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-          final docs = snapshot.data!
-              .where((doc) => doc['status']?.toString() != 'cancelled')
-              .toList()
-            ..sort((a, b) => _appointmentDate(a).compareTo(_appointmentDate(b)));
+          final docs = [
+            ...snapshot.data!,
+          ]..sort((a, b) => _appointmentDate(a).compareTo(_appointmentDate(b)));
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
@@ -591,10 +590,7 @@ class ClientAppointments extends StatelessWidget {
     );
   }
 
-  Widget _appointmentCard(
-    BuildContext context,
-    Map<String, dynamic> data,
-  ) {
+  Widget _appointmentCard(BuildContext context, Map<String, dynamic> data) {
     final date = _appointmentDate(data);
     final status = data['status']?.toString() ?? 'pending';
     final statusLabel = _appointmentStatusLabel(status);
@@ -602,8 +598,12 @@ class ClientAppointments extends StatelessWidget {
         status == 'pending' || status == 'approved' || status == 'planned';
     final color = status == 'approved' || status == 'planned'
         ? Colors.green
+        : status == 'done'
+        ? Colors.teal
         : status == 'rejected' || status == 'cancelled'
         ? Colors.grey
+        : status == 'noshow'
+        ? Colors.red
         : Colors.orange;
 
     return Card(
@@ -616,26 +616,12 @@ class ClientAppointments extends StatelessWidget {
         title: Text(_formatDateTime(date)),
         subtitle: Text('Durum: $statusLabel'),
         trailing: canCancel
-            ? Wrap(
-                spacing: 2,
-                children: [
-                  IconButton(
-                    tooltip: 'Randevuyu iptal et',
-                    onPressed: () => _cancelAppointment(context, data),
-                    icon: const Icon(Icons.event_busy_outlined),
-                  ),
-                  IconButton(
-                    tooltip: 'Randevuyu sil',
-                    onPressed: () => _deleteAppointment(context, data),
-                    icon: const Icon(Icons.delete_outline),
-                  ),
-                ],
+            ? IconButton(
+                tooltip: 'Randevuyu iptal et',
+                onPressed: () => _cancelAppointment(context, data),
+                icon: const Icon(Icons.event_busy_outlined),
               )
-            : IconButton(
-                tooltip: 'Randevuyu sil',
-                onPressed: () => _deleteAppointment(context, data),
-                icon: const Icon(Icons.delete_outline),
-              ),
+            : const SizedBox(width: 8),
       ),
     );
   }
@@ -662,12 +648,7 @@ class ClientAppointments extends StatelessWidget {
       throw 'Geçmiş bir tarih veya saat seçilemez.';
     }
 
-    final identity = _requestIdentity(patient);
     await MindTrackBackend.instance.createAppointmentRequest(
-      clientName: identity.name,
-      clientFirstName: identity.firstName,
-      clientLastName: identity.lastName,
-      clientEmail: identity.email,
       at: selectedDateTime,
     );
   }
@@ -697,8 +678,10 @@ class ClientAppointments extends StatelessWidget {
     );
     if (ok != true) return;
     try {
-      await MindTrackBackend.instance
-          .cancelAppointment(appointment['id'].toString(), by: 'client');
+      await MindTrackBackend.instance.cancelAppointment(
+        appointment['id'].toString(),
+        by: 'client',
+      );
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,
@@ -708,48 +691,6 @@ class ClientAppointments extends StatelessWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Randevu iptal edilemedi: ${error.message}')),
-        );
-      }
-    }
-  }
-
-  Future<void> _deleteAppointment(
-    BuildContext context,
-    Map<String, dynamic> appointment,
-  ) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Randevuyu sil'),
-        content: const Text(
-          'Bu randevu listenizden ve psikolog tarafındaki ortak kayıttan silinecek. Bu işlem geri alınamaz.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Vazgeç'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Sil'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    try {
-      await MindTrackBackend.instance
-          .deleteAppointment(appointment['id'].toString());
-      if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Randevu silindi.')));
-      }
-    } on BackendException catch (error) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Randevu silinemedi: ${error.message}'),
-          ),
         );
       }
     }
@@ -1290,7 +1231,11 @@ class _RequestIdentity {
 
 _RequestIdentity _requestIdentity(Map<String, dynamic> patient) {
   final backend = MindTrackBackend.instance;
-  final email = _firstNonEmpty([patient['email']?.toString(), backend.userEmail, '']);
+  final email = _firstNonEmpty([
+    patient['email']?.toString(),
+    backend.userEmail,
+    '',
+  ]);
   final storedFirst = patient['firstName']?.toString().trim() ?? '';
   final storedLast = patient['lastName']?.toString().trim() ?? '';
   final storedName = _firstNonEmpty([

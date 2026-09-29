@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 
 import '../../data/data_store.dart';
@@ -1113,10 +1112,7 @@ class _ClientsTabState extends State<ClientsTab> {
             IconButton(
               tooltip: 'Tamamlandı',
               visualDensity: VisualDensity.compact,
-              onPressed: () {
-                a.status = 'done';
-                widget.data.save();
-              },
+              onPressed: () => _setAppointmentStatus(context, a, 'done'),
               icon: const Icon(
                 Icons.check_circle_outline,
                 size: 19,
@@ -1126,10 +1122,7 @@ class _ClientsTabState extends State<ClientsTab> {
             IconButton(
               tooltip: 'Gelmedi',
               visualDensity: VisualDensity.compact,
-              onPressed: () {
-                a.status = 'noshow';
-                widget.data.save();
-              },
+              onPressed: () => _setAppointmentStatus(context, a, 'noshow'),
               icon: const Icon(
                 Icons.cancel_outlined,
                 size: 19,
@@ -1140,6 +1133,28 @@ class _ClientsTabState extends State<ClientsTab> {
         ],
       ),
     );
+  }
+
+  Future<void> _setAppointmentStatus(
+    BuildContext context,
+    Appointment appointment,
+    String status,
+  ) async {
+    try {
+      await widget.data.updateAppointmentStatus(appointment, status);
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Randevu durumu sunucuda güncellenemedi. Lütfen tekrar deneyin.',
+              style: TextStyle(),
+            ),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+      }
+    }
   }
 
   Widget _chip(String label, bool completed, bool gone) {
@@ -1820,14 +1835,11 @@ class _ClientsTabState extends State<ClientsTab> {
                   child: Center(child: CircularProgressIndicator()),
                 );
               }
-              final items = snap.data!
-                  .where((d) => d['clientId'] == c.id)
-                  .toList()
-                ..sort(
-                  (a, b) => ((b['createdAtMs'] as num?)?.toInt() ?? 0).compareTo(
-                    (a['createdAtMs'] as num?)?.toInt() ?? 0,
-                  ),
-                );
+              final items =
+                  snap.data!.where((d) => d['clientId'] == c.id).toList()..sort(
+                    (a, b) => ((b['createdAtMs'] as num?)?.toInt() ?? 0)
+                        .compareTo((a['createdAtMs'] as num?)?.toInt() ?? 0),
+                  );
               if (items.isEmpty) {
                 return const Padding(
                   padding: EdgeInsets.symmetric(vertical: 24),
@@ -1889,10 +1901,7 @@ class _ClientsTabState extends State<ClientsTab> {
     );
   }
 
-  Future<void> _createHomework(
-    BuildContext context,
-    Client c,
-  ) async {
+  Future<void> _createHomework(BuildContext context, Client c) async {
     final title = TextEditingController();
     final description = TextEditingController();
     final result = await showDialog<bool>(

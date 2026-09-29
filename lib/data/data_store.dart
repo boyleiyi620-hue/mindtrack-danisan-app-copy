@@ -15,6 +15,7 @@ import '../models/plan.dart';
 import '../models/task.dart';
 import '../models/user_account.dart';
 import 'account_store.dart';
+import 'appointment_sync.dart';
 import 'mindtrack_backend.dart';
 
 /// Kullanıcıya özel veri deposu — her değişiklikte kaydeder ve ekranlara haber verir.
@@ -82,7 +83,9 @@ class DataStore extends ChangeNotifier {
   }
 
   Future<void> _applyRemoteState(
-      Map<String, dynamic>? remote, UserAccount localUser) async {
+    Map<String, dynamic>? remote,
+    UserAccount localUser,
+  ) async {
     if (remote == null) return;
     try {
       final next = AppData.fromJson(remote);
@@ -102,7 +105,9 @@ class DataStore extends ChangeNotifier {
     for (final file in next.pdfFiles) {
       if (file.dataUrl.isNotEmpty || file.storagePath.isEmpty) continue;
       try {
-        final bytes = await MindTrackBackend.instance.downloadPdf(file.storagePath);
+        final bytes = await MindTrackBackend.instance.downloadPdf(
+          file.storagePath,
+        );
         file.dataUrl = 'data:${file.type};base64,${base64Encode(bytes)}';
       } catch (_) {
         // Dosya uzak depoda yoksa kütüphane satırı boş kalır, uygulama çalışır.
@@ -123,6 +128,24 @@ class DataStore extends ChangeNotifier {
     _prefs.setString(accounts.dataKey(u), encoded);
     notifyListeners();
     _saveRemote(encoded);
+  }
+
+  /// Psikolog takvimindeki durum değişikliğini ortak Supabase randevusuna da
+  /// yazar. Ortak olmayan eski randevular için yardımcı işlem yapmadan döner;
+  /// onlar yalnızca psikologun yerel/veri durumu içinde kaydedilir.
+  Future<void> updateAppointmentStatus(
+    Appointment appointment,
+    String nextStatus,
+  ) async {
+    final previous = appointment.status;
+    appointment.status = nextStatus;
+    try {
+      await syncSharedAppointment(appointment);
+      save();
+    } catch (_) {
+      appointment.status = previous;
+      rethrow;
+    }
   }
 
   Future<void> _saveRemote(String encoded) async {
@@ -171,8 +194,10 @@ class DataStore extends ChangeNotifier {
       final bytes = _decodeDataUrl(dataUrl);
       if (bytes == null) continue;
       try {
-        final path = await MindTrackBackend.instance
-            .uploadPdf(raw['id'].toString(), bytes);
+        final path = await MindTrackBackend.instance.uploadPdf(
+          raw['id'].toString(),
+          bytes,
+        );
         raw['storagePath'] = path;
         raw['dataUrl'] = '';
       } catch (_) {
@@ -217,99 +242,146 @@ class DataStore extends ChangeNotifier {
       description: 'Danışanın genel durumunu değerlendirir.',
       questions: [
         FormQuestion(
-            id: newId(),
-            type: 'scale',
-            text: 'Genel kaygı düzeyinizi değerlendirin',
-            scaleMax: 5,
-            order: 0),
+          id: newId(),
+          type: 'scale',
+          text: 'Genel kaygı düzeyinizi değerlendirin',
+          scaleMax: 5,
+          order: 0,
+        ),
         FormQuestion(
-            id: newId(),
-            type: 'multiple_choice',
-            text: 'Uyku kaliteniz nasıl?',
-            options: ['Çok İyi', 'İyi', 'Orta', 'Kötü', 'Çok Kötü'],
-            order: 1),
+          id: newId(),
+          type: 'multiple_choice',
+          text: 'Uyku kaliteniz nasıl?',
+          options: ['Çok İyi', 'İyi', 'Orta', 'Kötü', 'Çok Kötü'],
+          order: 1,
+        ),
         FormQuestion(
-            id: newId(),
-            type: 'yes_no',
-            text: 'Son 2 haftada işe/okula gitmekte zorlandınız mı?',
-            order: 2),
+          id: newId(),
+          type: 'yes_no',
+          text: 'Son 2 haftada işe/okula gitmekte zorlandınız mı?',
+          order: 2,
+        ),
       ],
     );
     data.forms.add(form);
 
-    final c1 = Client(id: newId(), name: 'Ayşe Yılmaz', email: 'ayse@ornek.com', phone: '0532 000 00 01', gender: 'Kadın', tags: ['Kaygı'], notes: 'İlk görüşme ertelendi.');
-    final c2 = Client(id: newId(), name: 'Mehmet Demir', email: 'mehmet@ornek.com', phone: '0532 000 00 02', gender: 'Erkek', tags: ['Uyku']);
-    final c3 = Client(id: newId(), name: 'Zeynep Kaya', email: 'zeynep@ornek.com', phone: '0532 000 00 03', tags: ['Sınav']);
+    final c1 = Client(
+      id: newId(),
+      name: 'Ayşe Yılmaz',
+      email: 'ayse@ornek.com',
+      phone: '0532 000 00 01',
+      gender: 'Kadın',
+      tags: ['Kaygı'],
+      notes: 'İlk görüşme ertelendi.',
+    );
+    final c2 = Client(
+      id: newId(),
+      name: 'Mehmet Demir',
+      email: 'mehmet@ornek.com',
+      phone: '0532 000 00 02',
+      gender: 'Erkek',
+      tags: ['Uyku'],
+    );
+    final c3 = Client(
+      id: newId(),
+      name: 'Zeynep Kaya',
+      email: 'zeynep@ornek.com',
+      phone: '0532 000 00 03',
+      tags: ['Sınav'],
+    );
     data.clients.addAll([c1, c2, c3]);
 
-    data.assessments.add(Assessment(
-      id: newId(),
-      clientId: c1.id,
-      formId: form.id,
-      answers: {
-        form.questions[0].id: 3,
-        form.questions[1].id: 'Orta',
-        form.questions[2].id: 'Hayır',
-      },
-      score: 10,
-    ));
+    data.assessments.add(
+      Assessment(
+        id: newId(),
+        clientId: c1.id,
+        formId: form.id,
+        answers: {
+          form.questions[0].id: 3,
+          form.questions[1].id: 'Orta',
+          form.questions[2].id: 'Hayır',
+        },
+        score: 10,
+      ),
+    );
 
     data.appointments.addAll([
       Appointment(
-          id: newId(),
-          date: iso(today),
-          time: '10:00',
-          clientId: c1.id,
-          type: 'therapy',
-          status: 'planned'),
+        id: newId(),
+        date: iso(today),
+        time: '10:00',
+        clientId: c1.id,
+        type: 'therapy',
+        status: 'planned',
+      ),
       Appointment(
-          id: newId(),
-          date: iso(today.add(const Duration(days: 2))),
-          time: '14:30',
-          clientId: c2.id,
-          type: 'intake',
-          status: 'planned'),
+        id: newId(),
+        date: iso(today.add(const Duration(days: 2))),
+        time: '14:30',
+        clientId: c2.id,
+        type: 'intake',
+        status: 'planned',
+      ),
     ]);
 
-    data.notes.add(Note(
-      id: newId(),
-      clientId: c1.id,
-      title: 'Seans 1',
-      mood: 'Orta',
-      subjective: 'Danışan kaygılarını dile getirdi.',
-      objective: 'Göz teması düşük, konuşma hızı yüksek.',
-      assessment: 'Yaygın kaygı belirtileri gözleniyor.',
-      plan: 'Nefes egzersizleri önerildi.',
-    ));
+    data.notes.add(
+      Note(
+        id: newId(),
+        clientId: c1.id,
+        title: 'Seans 1',
+        mood: 'Orta',
+        subjective: 'Danışan kaygılarını dile getirdi.',
+        objective: 'Göz teması düşük, konuşma hızı yüksek.',
+        assessment: 'Yaygın kaygı belirtileri gözleniyor.',
+        plan: 'Nefes egzersizleri önerildi.',
+      ),
+    );
 
     final plan = Plan(id: newId(), clientId: c1.id);
-    plan.goals.add(Goal(
-      id: newId(),
-      text: 'Haftada 3 kez nefes egzersizi yapmak',
-      category: 'short',
-      status: 'in_progress',
-    ));
-    plan.goals.add(Goal(
-      id: newId(),
-      text: 'Kaygı tetikleyicilerini günlükte izlemek',
-      category: 'long',
-      status: 'pending',
-    ));
+    plan.goals.add(
+      Goal(
+        id: newId(),
+        text: 'Haftada 3 kez nefes egzersizi yapmak',
+        category: 'short',
+        status: 'in_progress',
+      ),
+    );
+    plan.goals.add(
+      Goal(
+        id: newId(),
+        text: 'Kaygı tetikleyicilerini günlükte izlemek',
+        category: 'long',
+        status: 'pending',
+      ),
+    );
     data.plans.add(plan);
 
     data.tasks.addAll([
-      Task(id: newId(), text: 'Ayşe için ölçek sonuçlarını raporla', clientId: c1.id, priority: 'high', dueDate: iso(today.add(const Duration(days: 1)))),
-      Task(id: newId(), text: 'Mehmet için randevu hatırlatması gönder', clientId: c2.id, priority: 'medium'),
+      Task(
+        id: newId(),
+        text: 'Ayşe için ölçek sonuçlarını raporla',
+        clientId: c1.id,
+        priority: 'high',
+        dueDate: iso(today.add(const Duration(days: 1))),
+      ),
+      Task(
+        id: newId(),
+        text: 'Mehmet için randevu hatırlatması gönder',
+        clientId: c2.id,
+        priority: 'medium',
+      ),
     ]);
 
     data.pdfCats.add(PdfCategory(id: newId(), name: 'Ölçek Çıktıları'));
-    data.pdfFiles.add(PdfFile(
-      id: newId(),
-      catId: data.pdfCats.last.id,
-      name: 'MindTrack Ornek.pdf',
-      size: 643,
-      dataUrl: _demoPdfBase64,
-    ));
+    data.pdfFiles.add(
+      PdfFile(
+        id: newId(),
+        catId: data.pdfCats.last.id,
+        name: 'MindTrack Ornek.pdf',
+        size: 643,
+        dataUrl: _demoPdfBase64,
+      ),
+    );
     save();
   }
 }
