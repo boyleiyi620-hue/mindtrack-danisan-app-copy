@@ -82,6 +82,17 @@ class MindTrackBackend {
     });
   }
 
+  /// Web OAuth akışı. Supabase panelinde Google provider ve redirect URL'leri
+  /// ayrıca etkinleştirilmelidir.
+  Future<void> signInWithGoogle() async {
+    await _guard(() async {
+      await _db.auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: Uri.base.origin,
+      );
+    });
+  }
+
   Future<void> signOut() async {
     await _guard(() async => _db.auth.signOut());
   }

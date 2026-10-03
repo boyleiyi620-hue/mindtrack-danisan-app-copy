@@ -35,6 +35,12 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _kvkkOk = false;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _restoreOAuthUser());
+  }
+
+  @override
   void dispose() {
     _name.dispose();
     _email.dispose();
@@ -42,6 +48,45 @@ class _AuthScreenState extends State<AuthScreen> {
     _pass.dispose();
     _pass2.dispose();
     super.dispose();
+  }
+
+  Future<void> _restoreOAuthUser() async {
+    final backend = MindTrackBackend.instance;
+    final email = backend.userEmail?.trim().toLowerCase();
+    if (!backend.isSignedIn || email == null || email.isEmpty) return;
+    var user = widget.store.findByEmail(email);
+    if (user == null) {
+      final salt = randomHex();
+      user = UserAccount(
+        id: backend.userId ?? '$salt${DateTime.now().microsecondsSinceEpoch}',
+        name: backend.displayName.trim().isEmpty
+            ? email.split('@').first
+            : backend.displayName.trim(),
+        email: email,
+        salt: salt,
+        pwdHash: hashPassword(randomHex(), salt),
+        createdAt: DateTime.now().millisecondsSinceEpoch.toDouble(),
+      );
+      widget.store.addUser(user);
+    }
+    widget.store.setSession(user);
+    widget.data.load();
+    await widget.data.startRemoteSync();
+    if (mounted) _goHome();
+  }
+
+  Future<void> _googleLogin() async {
+    setState(() {
+      _error = null;
+      _busy = true;
+    });
+    try {
+      await MindTrackBackend.instance.signInWithGoogle();
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _submit() async {
@@ -104,12 +149,6 @@ class _AuthScreenState extends State<AuthScreen> {
     try {
       await backend.signIn(email, pass);
     } on BackendException catch (e) {
-      // Hesap uzak tarafta hiç yoksa ilk girişte sessizce oluşturulur; böylece
-      // web'de açılan hesap ilk Android girişinde de tanınır.
-      if (e.message.contains('Invalid login credentials')) {
-        await backend.signUp(email, pass);
-        return;
-      }
       throw 'Oturum açılamadı: ${e.message}';
     }
   }
@@ -146,6 +185,9 @@ class _AuthScreenState extends State<AuthScreen> {
           pass,
           displayName: name,
         );
+        if (!MindTrackBackend.instance.isSignedIn) {
+          throw 'Kayıt tamamlandı. Gmail adresinize gelen doğrulama bağlantısını onayladıktan sonra giriş yapın.';
+        }
       } on BackendException catch (e) {
         if (e.message.contains('already registered')) {
           throw 'Bu e-posta zaten kayıtlı. Giriş yapmayı deneyin.';
@@ -337,6 +379,12 @@ class _AuthScreenState extends State<AuthScreen> {
                 : Text(_mode == AuthMode.login ? 'Giriş Yap' : 'Kayıt Ol',
                     style: const TextStyle(
                         fontSize: 15, fontWeight: FontWeight.w600)),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: _busy ? null : _googleLogin,
+            icon: const Icon(Icons.account_circle_outlined),
+            label: const Text('Google ile devam et'),
           ),
         ],
       ),

@@ -89,6 +89,12 @@ class _LoginScreenState extends State<LoginScreen> {
       final email = _email.text.trim();
       if (_isReg) {
         await backend.signUp(email, _pass.text, displayName: _name.text.trim());
+        if (!backend.isSignedIn) {
+          _showError(
+            'Kayıt tamamlandı. Gmail adresinize gelen doğrulama bağlantısını onaylayıp giriş yapın.',
+          );
+          return;
+        }
         await backend.upsertPatientProfile(
           displayName: _name.text.trim(),
           email: email,
@@ -113,6 +119,19 @@ class _LoginScreenState extends State<LoginScreen> {
   void _showError(String message) {
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _googleLogin() async {
+    setState(() => _loading = true);
+    try {
+      await MindTrackBackend.instance.signInWithGoogle();
+    } on BackendException catch (e) {
+      _showError('Google girişi başlatılamadı: ${e.message}');
+    } catch (e) {
+      _showError('Google girişi başlatılamadı: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
@@ -178,6 +197,15 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: Text(_isReg ? 'Kayıt Ol' : 'Giriş Yap'),
                     ),
                   ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: _loading ? null : _googleLogin,
+                  icon: const Icon(Icons.account_circle_outlined),
+                  label: const Text('Google ile devam et'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 50),
+                  ),
+                ),
                 TextButton(
                   onPressed: () => setState(() => _isReg = !_isReg),
                   child: Text(_isReg ? 'Giriş Yap' : 'Kayıt Ol'),
