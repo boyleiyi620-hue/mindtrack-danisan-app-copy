@@ -1,13 +1,8 @@
 {{flutter_js}}
 {{flutter_build_config}}
-// CanvasKit needs WebGL for its normal accelerated path. Some mobile browsers
-// (or devices with graphics acceleration disabled) expose Flutter's semantics
-// tree but fail to paint the canvas, which looks like unstyled HTML. Detect
-// WebGL before startup and use CanvasKit's CPU path only on those devices.
-const mindtrackCanvas = document.createElement('canvas');
-const mindtrackHasWebGL = Boolean(
-  mindtrackCanvas.getContext('webgl2') || mindtrackCanvas.getContext('webgl'),
-);
+// CanvasKit's WebGL context can be created successfully and still fail on
+// some mobile GPU/driver combinations. CPU-only mode avoids the unstyled
+// semantics-only screen; MindTrack's form-based UI does not need GPU effects.
 _flutter.loader.load({
-  config: { canvasKitForceCpuOnly: !mindtrackHasWebGL },
+  config: { canvasKitForceCpuOnly: true },
 });
