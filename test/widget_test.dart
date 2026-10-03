@@ -231,7 +231,12 @@ void main() {
     await tester.tap(find.text('Randevular'));
     await tester.pumpAndSettle();
 
-    final past = DateTime.now().subtract(const Duration(days: 4));
+    final now = DateTime.now();
+    final past = now.subtract(const Duration(days: 4));
+    if (past.year != now.year || past.month != now.month) {
+      await tester.tap(find.byTooltip('Önceki ay'));
+      await tester.pumpAndSettle();
+    }
     final pastKey = Key(
       'cal-cell-'
       '${past.year.toString().padLeft(4, '0')}-'
