@@ -776,16 +776,17 @@ class MindTrackBackend {
 
   Map<String, dynamic>? _legacyAppointment(Map<String, dynamic> r) => {
     'id': r['id'],
-    'clientUserId': r['client_uid'],
-    'clientRef': r['client_ref'],
-    'clientName': r['client_name'],
-    'clientFirstName': r['client_first_name'],
-    'clientLastName': r['client_last_name'],
-    'clientEmail': r['client_email'],
-    'date': r['appointment_at'],
+    'clientUserId': r['client_uid'] ?? r['clientUserId'],
+    'clientRef': r['client_ref'] ?? r['clientRef'],
+    'clientName': r['client_name'] ?? r['clientName'],
+    'clientFirstName': r['client_first_name'] ?? r['clientFirstName'],
+    'clientLastName': r['client_last_name'] ?? r['clientLastName'],
+    'clientEmail': r['client_email'] ?? r['clientEmail'],
+    'date': r['appointment_at'] ?? r['date'] ?? r['appointmentAt'],
     'status': r['status'],
     'type': r['type'],
-    'linkedAppointmentId': r['linked_appointment_id'],
+    'linkedAppointmentId':
+        r['linked_appointment_id'] ?? r['linkedAppointmentId'],
     'cancelledBy': r['cancelled_by'],
     'createdAtMs': _asMillis(r['created_at']),
   };
