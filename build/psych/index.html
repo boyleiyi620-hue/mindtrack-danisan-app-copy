@@ -16,6 +16,40 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
-  <script src="flutter_bootstrap.js" async></script>
+  <script>
+    (async () => {
+      const marker = 'mindtrack-sw-network-v1';
+      try {
+        if ('serviceWorker' in navigator) {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          const outdated = registrations.filter(
+            (registration) => !registration.active?.scriptURL.includes(marker),
+          );
+          if (outdated.length > 0) {
+            await Promise.all(outdated.map((registration) => registration.unregister()));
+            const cacheNames = await caches.keys();
+            await Promise.all(
+              cacheNames
+                .filter((name) => name.startsWith('mindtrack-static-'))
+                .map((name) => caches.delete(name)),
+            );
+          }
+          await navigator.serviceWorker.register(
+            `flutter_service_worker.js?${marker}`,
+          );
+          await Promise.race([
+            navigator.serviceWorker.ready,
+            new Promise((resolve) => setTimeout(resolve, 2500)),
+          ]);
+        }
+      } catch (error) {
+        console.warn('MindTrack service worker update skipped:', error);
+      }
+      const bootstrap = document.createElement('script');
+      bootstrap.src = 'flutter_bootstrap.js?mindtrack-build-20261003';
+      bootstrap.async = true;
+      document.body.append(bootstrap);
+    })();
+  </script>
 </body>
 </html>

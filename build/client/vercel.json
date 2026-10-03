@@ -19,7 +19,7 @@
     {
       "source": "/(main\\.dart\\.js|flutter_bootstrap\\.js|flutter.js|flutter_service_worker\\.js)",
       "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=86400, stale-while-revalidate=604800" }
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
       ]
     },
     {
