@@ -300,18 +300,36 @@ class MindTrackBackend {
   Stream<List<Map<String, dynamic>>> watchClientAppointments() {
     final uid = userId;
     if (uid == null) return Stream.value(const []);
-    return _watch('appointments', {
-      'client_uid': uid,
-    }, rowMapper: _legacyAppointment);
+    // Supabase'in yerleşik stream'i ilk SELECT'i ve INSERT/UPDATE olaylarını
+    // aynı akışta birleştirir. Randevularda özel Realtime kanalı kullanmak
+    // yerine bunu kullanmak, onay UPDATE'lerinin tarayıcıya kaçırılmasını
+    // engeller.
+    return _db
+        .from('appointments')
+        .stream(primaryKey: ['id'])
+        .eq('client_uid', uid)
+        .map(
+          (rows) => rows
+              .map((row) => _legacyAppointment(row))
+              .whereType<Map<String, dynamic>>()
+              .toList(),
+        );
   }
 
   /// Psikologun tüm randevuları (onaylananlar ve talepler dahil).
   Stream<List<Map<String, dynamic>>> watchPsychologistAppointments() {
     final uid = userId;
     if (uid == null) return Stream.value(const []);
-    return _watch('appointments', {
-      'psychologist_id': uid,
-    }, rowMapper: _legacyAppointment);
+    return _db
+        .from('appointments')
+        .stream(primaryKey: ['id'])
+        .eq('psychologist_id', uid)
+        .map(
+          (rows) => rows
+              .map((row) => _legacyAppointment(row))
+              .whereType<Map<String, dynamic>>()
+              .toList(),
+        );
   }
 
   /// Psikologun bekleyen randevu talepleri. Realtime filtresi tek sütun
@@ -319,14 +337,17 @@ class MindTrackBackend {
   Stream<List<Map<String, dynamic>>> watchPendingRequests() {
     final uid = userId;
     if (uid == null) return Stream.value(const []);
-    return _watch(
-      'appointments',
-      {'psychologist_id': uid},
-      rowMapper: (r) {
-        if ((r['status']?.toString() ?? '') != 'pending') return null;
-        return _legacyAppointment(r);
-      },
-    );
+    return _db
+        .from('appointments')
+        .stream(primaryKey: ['id'])
+        .eq('psychologist_id', uid)
+        .map(
+          (rows) => rows
+              .where((row) => row['status']?.toString() == 'pending')
+              .map((row) => _legacyAppointment(row))
+              .whereType<Map<String, dynamic>>()
+              .toList(),
+        );
   }
 
   /// Danışan adına talep kaydı oluşturur. Psikolog ve danışan kimlikleri
