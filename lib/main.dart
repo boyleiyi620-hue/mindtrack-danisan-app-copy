@@ -992,23 +992,35 @@ class _ClientFormDialogState extends State<ClientFormDialog> {
       title: Text(title),
       content: SizedBox(
         width: 620,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if ((widget.draft['description']?.toString() ?? '').isNotEmpty)
-                Padding(
+        height: (MediaQuery.sizeOf(context).height -
+                MediaQuery.viewInsetsOf(context).bottom)
+            .clamp(220.0, 620.0) *
+            .62,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if ((widget.draft['description']?.toString() ?? '').isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Text(widget.draft['description'].toString()),
+              ),
+            Expanded(
+              child: ListView.builder(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                itemCount: _questions.length,
+                itemBuilder: (context, index) => Padding(
+                  key: ValueKey(_questions[index]['id'] ?? 'q$index'),
                   padding: const EdgeInsets.only(bottom: 16),
-                  child: Text(widget.draft['description'].toString()),
+                  child: _questionWidget(_questions[index], index),
                 ),
-              for (var index = 0; index < _questions.length; index++) ...[
-                _questionWidget(_questions[index], index),
-                const SizedBox(height: 16),
-              ],
-              if (_error != null)
-                Text(_error!, style: const TextStyle(color: Colors.red)),
+              ),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(_error!, style: const TextStyle(color: Colors.red)),
             ],
-          ),
+          ],
         ),
       ),
       actions: [
