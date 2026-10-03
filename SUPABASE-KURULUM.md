@@ -1,8 +1,8 @@
 # MindTrack — Supabase Kurulum Rehberi
 
-> ## ✅ Kurulum tamamlandı (29 Eylül 2026)
+> ## ⚠️ Temel kurulum tamamlandı; randevu migration'ı bekliyor
 >
-> Proje oluşturuldu, migration'lar uygulandı ve uçtan uca doğrulandı.
+> Proje oluşturuldu. Canlı projede temel migration'lar mevcut; randevu iş akışı migration'ı henüz uygulanmamış görünüyor.
 >
 > | | |
 > | --- | --- |
@@ -11,9 +11,9 @@
 > | URL | `https://yfxepfxgiceplghlrxek.supabase.co` |
 > | Bölge | `ap-northeast-2` (Seoul) |
 > | Plan | Free |
-> | Migration | `20260929120000`, `20260929120100` — ikisi de uygulandı |
+> | Migration | `20260929120000`, `20260929120100` uygulanmış; `20260929133000` uygulanmalı |
 >
-> **Kalan tek iş: e-posta doğrulaması (SMTP)** → bkz. [Bölüm 3.1](#31-e-posta-dogrulaması-smtp--kritik).
+> **Kalan işler:** Önce `20260929133000_appointment_workflow.sql` migration'ını çalıştırın; ardından e-posta doğrulaması için SMTP kurun.
 > Bu yapılmadan yeni kullanıcı kaydolamaz.
 >
 > Bu dokümanın kalanı, projeyi sıfırdan kuranlar veya başka bir ortama
@@ -105,6 +105,7 @@ Migration dosyaları hazır ve **sırayla** çalıştırılmalıdır:
 | --- | --- |
 | `supabase/migrations/20260929120000_mindtrack_init.sql` | Tablolar, indeksler, RLS politikaları, sütun bazlı yetkiler |
 | `supabase/migrations/20260929120100_mindtrack_functions.sql` | RPC fonksiyonları, PDF depolama kovası, realtime yayın |
+| `supabase/migrations/20260929133000_appointment_workflow.sql` | Danışan randevu talebi, psikolog onayı/reddi ve iki taraflı durum senkronizasyonu |
 
 ### Yöntem A — SQL Editor (CLI kurmanız gerekmez, önerilir)
 
@@ -112,6 +113,7 @@ Migration dosyaları hazır ve **sırayla** çalıştırılmalıdır:
 2. `20260929120000_mindtrack_init.sql` içeriğinin tamamını yapıştırın → **Run**
 3. Sonuç `Success` dönüyorsa yeni bir sorgu açıp
    `20260929120100_mindtrack_functions.sql` içeriğini yapıştırın → **Run**
+4. `20260929133000_appointment_workflow.sql` içeriğinin tamamını yapıştırın → **Run**
 
 Oluşturulanlar:
 
@@ -119,7 +121,9 @@ Oluşturulanlar:
   `appointments`, `tasks`, `homework`
 - **Depolama kovası:** `mindtrack-pdfs` (özel, herkese kapalı)
 - **Fonksiyonlar:** `claim_pairing_code`, `cancel_appointment`,
-  `delete_own_appointment`, `submit_task`, `submit_homework`
+  `delete_own_appointment`, `submit_task`, `submit_homework`,
+  `create_appointment_request`, `approve_appointment_request`,
+  `update_shared_appointment`
 
 ### Yöntem B — Supabase CLI
 

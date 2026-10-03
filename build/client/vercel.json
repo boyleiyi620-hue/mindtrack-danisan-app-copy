@@ -17,7 +17,13 @@
       ]
     },
     {
-      "source": "/(main\\.dart\\.js|flutter_bootstrap\\.js|flutter_service_worker\\.js|version\\.json|index\\.html|manifest.*\\.json)",
+      "source": "/(main\\.dart\\.js|flutter_bootstrap\\.js|flutter.js|flutter_service_worker\\.js)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=86400, stale-while-revalidate=604800" }
+      ]
+    },
+    {
+      "source": "/(version\\.json|index\\.html|manifest.*\\.json)",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
       ]

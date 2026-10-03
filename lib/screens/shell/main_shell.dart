@@ -89,7 +89,7 @@ const _navItems = [
     'Ayarlar',
     Icons.settings_outlined,
     Icons.settings,
-    'Profil, veri yedeği, CSV dışa aktarım ve KVKK burada olacak.',
+    'Profil, CSV dışa aktarım ve KVKK burada olacak.',
   ),
 ];
 

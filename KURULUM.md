@@ -119,7 +119,8 @@ Gerekli Flutter sürümü: **3.38 veya üzeri** (proje Dart 3.13 ile yazıldı).
 - **Görevler**: Açık/gecikmiş görev takibi, öncelik ve son tarih yönetimi.
 - **Sonuçlar**: Form analizleri, puan trendi grafiği, risk işaretli değerlendirmeler, aylık akış.
 - **PDF Kütüphanesi**: Kategoriler, PDF yükleme, uygulama içinde görüntüleme, yeni sekmede açma ve indirme.
-- **Ayarlar**: Profil, PIN kilidi, JSON yedek/geri yükleme, CSV dışa aktarım, KVKK.
+- **Raporlar**: Seçilen hafta veya ay için danışan, iletişim, randevu türü ve durum bilgilerini uygulama temasında HTML/PDF'e hazır rapor olarak indirme.
+- **Ayarlar**: Profil, PIN kilidi, CSV dışa aktarım ve KVKK.
 
 ---
 
@@ -131,7 +132,7 @@ Gerekli Flutter sürümü: **3.38 veya üzeri** (proje Dart 3.13 ile yazıldı).
   her kullanıcı yalnızca kendine ait kayıtları görebilir.
 - PDF dosyaları için dosya sınırı **2 MB** uygulanır; dosyalar özel bir depolama
   kovasında tutulur ve herkese açık değildir.
-- **Düzenli yedek alın**: Ayarlar → Yedekleme → "Tam Yedek (JSON)".
+- Klinik veriler oturum açıkken Supabase'e senkronize edilir; yönetim paylaşımı için Raporlar ekranındaki dönemsel rapor kullanılmalıdır.
 - Bu uygulama tıbbi tanı koymaz; mesleki kararları destekleyen bir kayıt aracıdır.
 
 ---
