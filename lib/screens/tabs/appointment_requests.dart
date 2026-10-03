@@ -9,10 +9,19 @@ import '../../theme/app_theme.dart';
 /// Danışan uygulamasından gelen randevu talepleri.
 /// Talep belgesindeki clientName alanı, danışanın psikolog ekranında
 /// eşleşme tamamlanmadan da adının görünmesini sağlar.
-class PendingAppointmentRequests extends StatelessWidget {
+class PendingAppointmentRequests extends StatefulWidget {
   const PendingAppointmentRequests({super.key, required this.data});
 
   final DataStore data;
+
+  @override
+  State<PendingAppointmentRequests> createState() =>
+      _PendingAppointmentRequestsState();
+}
+
+class _PendingAppointmentRequestsState
+    extends State<PendingAppointmentRequests> {
+  final Set<String> _resolvedRequestIds = <String>{};
 
   @override
   Widget build(BuildContext context) {
@@ -25,7 +34,12 @@ class PendingAppointmentRequests extends StatelessWidget {
         if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
           return const SizedBox.shrink();
         }
-        final requests = [...snapshot.data!]
+        final requests = snapshot.data!
+            .where(
+              (request) =>
+                  !_resolvedRequestIds.contains(request['id']?.toString()),
+            )
+            .toList()
           ..sort((a, b) => _requestDate(a).compareTo(_requestDate(b)));
         return Container(
           padding: const EdgeInsets.all(16),
@@ -174,8 +188,11 @@ class PendingAppointmentRequests extends StatelessWidget {
     final date = _requestDate(raw);
     try {
       Client? existingClient;
-      for (final candidate in data.data.clients) {
-        if (clientUid.isNotEmpty && candidate.clientUserId == clientUid) {
+      for (final candidate in widget.data.data.clients) {
+        final sameEmail = email.trim().isNotEmpty &&
+            candidate.email.trim().toLowerCase() == email.trim().toLowerCase();
+        if ((clientUid.isNotEmpty && candidate.clientUserId == clientUid) ||
+            sameEmail) {
           existingClient = candidate;
           break;
         }
@@ -184,7 +201,7 @@ class PendingAppointmentRequests extends StatelessWidget {
       final client =
           existingClient ??
           Client(
-            id: data.newId(),
+            id: widget.data.newId(),
             clientUserId: clientUid,
             name: name,
             email: email,
@@ -195,7 +212,7 @@ class PendingAppointmentRequests extends StatelessWidget {
       }
 
       final appointment = Appointment(
-        id: data.newId(),
+        id: widget.data.newId(),
         date: _isoDate(date),
         time: _time(date),
         clientId: client.id,
@@ -211,10 +228,13 @@ class PendingAppointmentRequests extends StatelessWidget {
         linkedAppointmentId: appointment.id,
       );
       if (isNewClient) {
-        data.data.clients.add(client);
+        widget.data.data.clients.add(client);
       }
-      data.data.appointments.add(appointment);
-      data.save();
+      widget.data.data.appointments.add(appointment);
+      widget.data.save();
+      if (mounted) {
+        setState(() => _resolvedRequestIds.add(request['id'].toString()));
+      }
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('$name randevu talebi onaylandı.')),
@@ -240,6 +260,9 @@ class PendingAppointmentRequests extends StatelessWidget {
         at: _requestDate(request),
         linkedAppointmentId: request['linkedAppointmentId']?.toString() ?? '',
       );
+      if (mounted) {
+        setState(() => _resolvedRequestIds.add(request['id'].toString()));
+      }
       if (context.mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('Talep reddedildi.')));

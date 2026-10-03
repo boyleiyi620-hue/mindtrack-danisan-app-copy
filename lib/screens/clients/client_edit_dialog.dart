@@ -93,13 +93,26 @@ class _ClientEditDialogState extends State<ClientEditDialog> {
 
   Future<void> _save() async {
     final name = _name.text.trim();
-    final email = _email.text.trim();
+    final email = _email.text.trim().toLowerCase();
     if (name.isEmpty) {
       setState(() => _error = 'Danışan adı gereklidir.');
       return;
     }
     if (!_isEmail(email)) {
       setState(() => _error = 'Geçerli bir e-posta girin.');
+      return;
+    }
+    Client? duplicate;
+    for (final client in widget.data.data.clients) {
+      if (client.id != widget.existing?.id &&
+          client.email.trim().toLowerCase() == email) {
+        duplicate = client;
+        break;
+      }
+    }
+    if (duplicate != null) {
+      setState(() => _error =
+          'Bu Gmail adresi zaten kayıtlı. Aynı e-posta ile ikinci danışan oluşturulamaz.');
       return;
     }
     final now = DateTime.now().millisecondsSinceEpoch.toDouble();
