@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mindtrack-static-v8';
+const CACHE_NAME = 'mindtrack-static-v9';
 const STATIC_FILE = /\.(?:js|wasm|json|png|jpg|jpeg|gif|svg|ico|otf|ttf|woff2?)$/i;
 
 self.addEventListener('install', (event) => {

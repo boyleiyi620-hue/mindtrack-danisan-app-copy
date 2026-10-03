@@ -6,7 +6,8 @@ const bootstrap = await readFile(
   new URL('../web/flutter_bootstrap.js', import.meta.url),
   'utf8',
 );
-assert.match(bootstrap, /canvasKitForceCpuOnly:\s*true/);
+assert.match(bootstrap, /_flutter\.loader\.load\(\);\s*$/);
+assert.doesNotMatch(bootstrap, /canvasKitForceCpuOnly\s*:\s*true/);
 
 const source = await readFile(
   new URL('../web/disable_flutter_service_worker.js', import.meta.url),
