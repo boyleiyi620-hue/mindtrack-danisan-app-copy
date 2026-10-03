@@ -1,0 +1,40 @@
+name: Build web bundles
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: "!contains(github.event.head_commit.message, '[web-build]')"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.38.5'
+          cache: true
+
+      - name: Build web bundles
+        env:
+          SUPABASE_URL: https://yfxepfxgiceplghlrxek.supabase.co
+          SUPABASE_PUBLISHABLE_KEY: sb_publishable_-2LSJNP29XcL3ykiRQ8aaQ_kxZ7aKAn
+        run: |
+          flutter pub get
+          ./scripts/build_web.sh
+
+      - name: Commit generated bundles
+        run: |
+          git config user.name 'MindTrack Web Build'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -f build/client build/psych
+          git commit -m 'Build web bundles [web-build]' || exit 0
+          git push
