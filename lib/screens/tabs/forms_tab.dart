@@ -952,33 +952,47 @@ class _ResponseCard extends StatelessWidget {
               style: TextStyle(fontSize: 12.5, color: AppColors.muted),
             ),
           ] else ...[
-            const SizedBox(height: 12),
-            const Divider(height: 1),
-            const SizedBox(height: 10),
-            for (final q in questions) ...[
-              _answerRow(q, answers is Map ? answers[q.id] : null),
-              const SizedBox(height: 8),
-            ],
-            if (freeText.isNotEmpty) ...[
-              const SizedBox(height: 2),
-              const Text(
-                'Serbest metin',
-                style: TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.muted,
-                ),
+            const SizedBox(height: 6),
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text(
+                'Cevapları görüntüle',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
               ),
-              const SizedBox(height: 4),
-              Text(
-                freeText,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppColors.text,
-                  height: 1.4,
-                ),
-              ),
-            ],
+              children: [
+                for (final q in questions) ...[
+                  _answerRow(q, answers is Map ? answers[q.id] : null),
+                  const SizedBox(height: 8),
+                ],
+                if (freeText.isNotEmpty) ...[
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Serbest metin',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.muted,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      freeText,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppColors.text,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ],
         ],
       ),

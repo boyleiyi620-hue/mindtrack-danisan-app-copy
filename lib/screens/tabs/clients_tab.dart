@@ -443,6 +443,7 @@ class _ClientsTabState extends State<ClientsTab> {
 
     const subs = <(String, IconData, String)>[
       ('overview', Icons.space_dashboard_outlined, 'Genel Bakış'),
+      ('forms', Icons.assignment_outlined, 'Form Cevapları'),
       ('appointments', Icons.calendar_month_outlined, 'Randevular'),
       ('notes', Icons.note_alt_outlined, 'Seans Notları'),
       ('plan', Icons.track_changes_outlined, 'Tedavi Planı'),
@@ -768,6 +769,8 @@ class _ClientsTabState extends State<ClientsTab> {
     switch (sub) {
       case 'appointments':
         return _appointmentsView(context, appts);
+      case 'forms':
+        return _clientFormResponses(c);
       case 'notes':
         return _notesView(context, c, notes);
       case 'plan':
@@ -777,6 +780,49 @@ class _ClientsTabState extends State<ClientsTab> {
       default:
         return _overviewSubView(context, c, notes, plans);
     }
+  }
+
+  Widget _clientFormResponses(Client client) {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: MindTrackBackend.instance.watchPsychologistTasks(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _miniEmpty(Icons.error_outline, 'Form cevapları yüklenemedi');
+        }
+        if (!snapshot.hasData) {
+          return const Padding(
+            padding: EdgeInsets.all(28),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        final email = client.email.trim().toLowerCase();
+        final tasks = snapshot.data!.where((task) {
+          final sameClient = task['clientId']?.toString() == client.id ||
+              (email.isNotEmpty &&
+                  task['clientEmail']?.toString().trim().toLowerCase() == email);
+          final answers = task['structuredAnswers'];
+          final hasAnswers = (answers is Map && answers.isNotEmpty) ||
+              (task['response']?.toString().trim().isNotEmpty ?? false);
+          return sameClient && hasAnswers;
+        }).toList()
+          ..sort((a, b) =>
+              ((b['createdAtMs'] as num?)?.toInt() ?? 0).compareTo(
+                (a['createdAtMs'] as num?)?.toInt() ?? 0,
+              ));
+        if (tasks.isEmpty) {
+          return _miniEmpty(
+            Icons.assignment_outlined,
+            'Bu danışandan henüz form cevabı gelmedi.',
+          );
+        }
+        return Column(
+          children: [
+            for (final task in tasks)
+              _ClientFormAnswerTile(task: task),
+          ],
+        );
+      },
+    );
   }
 
   // ---- Genel Bakış (danışan) ----
@@ -2184,6 +2230,89 @@ class _ClientsTabState extends State<ClientsTab> {
     Navigator.pop(context);
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Ödeme başarıyla kaydedildi.')),
+    );
+  }
+}
+
+class _ClientFormAnswerTile extends StatelessWidget {
+  const _ClientFormAnswerTile({required this.task});
+
+  final Map<String, dynamic> task;
+
+  @override
+  Widget build(BuildContext context) {
+    final draft = task['formDraft'] is Map
+        ? Map<String, dynamic>.from(task['formDraft'] as Map)
+        : <String, dynamic>{};
+    final questions = draft['questions'] is List
+        ? (draft['questions'] as List)
+        : const <dynamic>[];
+    final answers = task['structuredAnswers'] is Map
+        ? Map<String, dynamic>.from(task['structuredAnswers'] as Map)
+        : <String, dynamic>{};
+    final submittedAt = (task['createdAtMs'] as num?)?.toInt();
+    final date = submittedAt == null
+        ? ''
+        : fmtDate(DateTime.fromMillisecondsSinceEpoch(submittedAt));
+
+    String display(Object? value) {
+      if (value == null) return '—';
+      if (value is List) return value.map((item) => item.toString()).join(', ');
+      if (value is bool) return value ? 'Evet' : 'Hayır';
+      final text = value.toString().trim();
+      return text.isEmpty ? '—' : text;
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        initiallyExpanded: false,
+        leading: const Icon(Icons.assignment_turned_in_outlined),
+        title: Text(
+          (task['title'] ?? draft['title'] ?? 'Form').toString(),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(date.isEmpty ? 'Cevaplandı' : 'Cevaplandı · $date'),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        children: [
+          for (var i = 0; i < questions.length; i++)
+            if (questions[i] is Map) ...[
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  (questions[i]['text'] ?? 'Soru ${i + 1}').toString(),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.muted,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 3),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  display(answers[questions[i]['id']?.toString()]),
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.text,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+          if ((task['response']?.toString().trim().isNotEmpty ?? false))
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                task['response'].toString(),
+                style: const TextStyle(color: AppColors.text),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
