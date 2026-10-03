@@ -343,7 +343,24 @@ class MindTrackBackend {
         .eq('psychologist_id', uid)
         .map(
           (rows) => rows
-              .where((row) => row['status']?.toString() == 'pending')
+              .where((row) {
+                if (row['status']?.toString() != 'pending') return false;
+                final rawDate = row['appointment_at'] ?? row['date'];
+                final date = rawDate is DateTime
+                    ? rawDate
+                    : DateTime.tryParse(rawDate?.toString() ?? '');
+                final name = (row['client_name'] ?? row['clientName'])
+                    ?.toString()
+                    .trim()
+                    .toLowerCase();
+                // Eski sürümlerin ürettiği bozuk kayıtlar ekranda
+                // 01.01.2100 / Bilinmeyen Danışan olarak görünüyordu.
+                if (date == null || date.year >= 2099) return false;
+                if (name == null ||
+                    name.isEmpty ||
+                    name == 'bilinmeyen danışan') return false;
+                return true;
+              })
               .map((row) => _legacyAppointment(row))
               .whereType<Map<String, dynamic>>()
               .toList(),
