@@ -29,6 +29,8 @@ jobs:
           SUPABASE_PUBLISHABLE_KEY: sb_publishable_ugqE_bZ_IyNedJMk1I_saA_-eMtQAjE
         run: |
           flutter pub get
+          node scripts/test_service_worker.mjs
+          flutter test
           ./scripts/build_web.sh
 
       - name: Commit generated bundles

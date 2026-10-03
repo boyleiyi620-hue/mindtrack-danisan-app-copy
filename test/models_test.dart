@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mindtrack_danisan_app/data/appointment_sync.dart';
+import 'package:mindtrack_danisan_app/data/client_deduplication.dart';
 import 'package:mindtrack_danisan_app/models/app_data.dart';
 import 'package:mindtrack_danisan_app/models/appointment.dart';
 import 'package:mindtrack_danisan_app/models/assessment.dart';
@@ -148,5 +149,34 @@ void main() {
 
     expect(sharedAppointmentId(shared), 'remote-uuid');
     expect(sharedAppointmentId(local), isNull);
+  });
+
+  test('aynı e-posta adresli danışanları teke indirip randevuyu taşır', () {
+    final data = AppData(
+      clients: [
+        Client(id: 'c1', name: 'İlk Kayıt', email: '  SAME@gmail.com '),
+        Client(
+          id: 'c2',
+          name: 'İkinci Kayıt',
+          email: 'same@gmail.com',
+          clientUserId: 'patient-uid',
+        ),
+      ],
+      appointments: [
+        Appointment(
+          id: 'a1',
+          date: '2026-10-03',
+          time: '10:00',
+          clientId: 'c2',
+        ),
+      ],
+    );
+
+    expect(deduplicateClientsByEmail(data), isTrue);
+    expect(data.clients, hasLength(1));
+    expect(data.clients.single.id, 'c1');
+    expect(data.clients.single.clientUserId, 'patient-uid');
+    expect(data.appointments.single.clientId, 'c1');
+    expect(deduplicateClientsByEmail(data), isFalse);
   });
 }

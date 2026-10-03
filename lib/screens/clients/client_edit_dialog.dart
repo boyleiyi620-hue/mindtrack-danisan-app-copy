@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/data_store.dart';
+import '../../data/client_deduplication.dart';
 import '../../data/diagnosis_codes.dart';
 import '../../data/mindtrack_backend.dart';
 import '../../models/client.dart';
@@ -30,6 +31,7 @@ class _ClientEditDialogState extends State<ClientEditDialog> {
   String _status = 'active';
   late final List<String> _diagnosisCodes;
   String? _error;
+  bool _saving = false;
 
   @override
   void initState() {
@@ -92,8 +94,10 @@ class _ClientEditDialogState extends State<ClientEditDialog> {
   }
 
   Future<void> _save() async {
+    if (_saving) return;
+    if (widget.data.deduplicateClientsByEmail()) widget.data.save();
     final name = _name.text.trim();
-    final email = _email.text.trim().toLowerCase();
+    final email = normalizeClientEmail(_email.text);
     if (name.isEmpty) {
       setState(() => _error = 'Danışan adı gereklidir.');
       return;
@@ -105,7 +109,7 @@ class _ClientEditDialogState extends State<ClientEditDialog> {
     Client? duplicate;
     for (final client in widget.data.data.clients) {
       if (client.id != widget.existing?.id &&
-          client.email.trim().toLowerCase() == email) {
+          normalizeClientEmail(client.email) == email) {
         duplicate = client;
         break;
       }
@@ -115,68 +119,76 @@ class _ClientEditDialogState extends State<ClientEditDialog> {
           'Bu Gmail adresi zaten kayıtlı. Aynı e-posta ile ikinci danışan oluşturulamaz.');
       return;
     }
-    final now = DateTime.now().millisecondsSinceEpoch.toDouble();
-    final existing = widget.existing;
-    final tags = _tags.text
-        .split(',')
-        .map((t) => t.trim())
-        .where((t) => t.isNotEmpty)
-        .toList();
-    final sessionFee = double.tryParse(_sessionFee.text.trim()) ?? 0.0;
-    late final Client savedClient;
-    if (existing != null) {
-      savedClient = existing;
-      existing.name = name;
-      existing.email = email;
-      existing.phone = _phone.text.trim();
-      existing.birthDate = _birthDate;
-      existing.gender = _gender;
-      existing.sessionFee = sessionFee;
-      existing.tags
-        ..clear()
-        ..addAll(tags);
-      existing.notes = _notes.text.trim();
-      existing.status = _status;
-      existing.diagnosisCodes
-        ..clear()
-        ..addAll(_diagnosisCodes);
-      existing.updatedAt = now;
-    } else {
-      savedClient = Client(
-        id: widget.data.newId(),
-        name: name,
-        email: email,
-        phone: _phone.text.trim(),
-        birthDate: _birthDate,
-        gender: _gender,
-        sessionFee: sessionFee,
-        tags: tags,
-        diagnosisCodes: List.of(_diagnosisCodes),
-        notes: _notes.text.trim(),
-        status: _status,
-      );
-      widget.data.data.clients.add(savedClient);
-    }
-    widget.data.save();
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
     try {
-      final backend = MindTrackBackend.instance;
-      final uid = await backend.resolveClientUserId(savedClient);
-      if (uid.isNotEmpty) {
-        await backend.setDiagnosisCodes(
-          uid,
-          List<String>.of(savedClient.diagnosisCodes),
+      final now = DateTime.now().millisecondsSinceEpoch.toDouble();
+      final existing = widget.existing;
+      final tags = _tags.text
+          .split(',')
+          .map((t) => t.trim())
+          .where((t) => t.isNotEmpty)
+          .toList();
+      final sessionFee = double.tryParse(_sessionFee.text.trim()) ?? 0.0;
+      late final Client savedClient;
+      if (existing != null) {
+        savedClient = existing;
+        existing.name = name;
+        existing.email = email;
+        existing.phone = _phone.text.trim();
+        existing.birthDate = _birthDate;
+        existing.gender = _gender;
+        existing.sessionFee = sessionFee;
+        existing.tags
+          ..clear()
+          ..addAll(tags);
+        existing.notes = _notes.text.trim();
+        existing.status = _status;
+        existing.diagnosisCodes
+          ..clear()
+          ..addAll(_diagnosisCodes);
+        existing.updatedAt = now;
+      } else {
+        savedClient = Client(
+          id: widget.data.newId(),
+          name: name,
+          email: email,
+          phone: _phone.text.trim(),
+          birthDate: _birthDate,
+          gender: _gender,
+          sessionFee: sessionFee,
+          tags: tags,
+          diagnosisCodes: List.of(_diagnosisCodes),
+          notes: _notes.text.trim(),
+          status: _status,
         );
+        widget.data.data.clients.add(savedClient);
       }
-    } on BackendException catch (error) {
-      if (mounted) {
-        setState(
-          () => _error =
-              'Danışan kaydedildi ancak tanı kodu aktarılmadı: ${error.message}',
-        );
+      widget.data.save();
+      try {
+        final backend = MindTrackBackend.instance;
+        final uid = await backend.resolveClientUserId(savedClient);
+        if (uid.isNotEmpty) {
+          await backend.setDiagnosisCodes(
+            uid,
+            List<String>.of(savedClient.diagnosisCodes),
+          );
+        }
+      } on BackendException catch (error) {
+        if (mounted) {
+          setState(
+            () => _error =
+                'Danışan kaydedildi ancak tanı kodu aktarılmadı: ${error.message}',
+          );
+        }
+        return;
       }
-      return;
+      if (mounted) Navigator.of(context).pop(true);
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
-    if (mounted) Navigator.of(context).pop(true);
   }
 
   Future<void> _pickDiagnosisCodes() async {
@@ -437,9 +449,9 @@ class _ClientEditDialogState extends State<ClientEditDialog> {
                   ),
                   const SizedBox(width: 8),
                   FilledButton.icon(
-                    onPressed: _save,
+                    onPressed: _saving ? null : _save,
                     icon: const Icon(Icons.save_outlined, size: 16),
-                    label: const Text('Kaydet', style: TextStyle()),
+                    label: Text(_saving ? 'Kaydediliyor…' : 'Kaydet'),
                   ),
                 ],
               ),

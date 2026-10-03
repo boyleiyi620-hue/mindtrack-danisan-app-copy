@@ -16,6 +16,7 @@ import '../models/task.dart';
 import '../models/user_account.dart';
 import 'account_store.dart';
 import 'appointment_sync.dart';
+import 'client_deduplication.dart' as client_dedup;
 import 'mindtrack_backend.dart';
 
 /// Kullanıcıya özel veri deposu — her değişiklikte kaydeder ve ekranlara haber verir.
@@ -55,7 +56,9 @@ class DataStore extends ChangeNotifier {
       final raw = _prefs.getString(accounts.dataKey(u));
       if (raw != null && raw.isNotEmpty) {
         data = AppData.fromJson(jsonDecode(raw) as Map<String, dynamic>);
-        deduplicateClientsByEmail();
+        if (deduplicateClientsByEmail()) {
+          _prefs.setString(accounts.dataKey(u), jsonEncode(data.toJson()));
+        }
       } else {
         data = AppData.empty();
       }
@@ -90,12 +93,13 @@ class DataStore extends ChangeNotifier {
     if (remote == null) return;
     try {
       final next = AppData.fromJson(remote);
-      deduplicateClientsByEmail(next);
+      final removedDuplicates = deduplicateClientsByEmail(next);
       await _hydratePdfs(next);
       final encoded = jsonEncode(next.toJson());
       data = next;
       await _prefs.setString(accounts.dataKey(localUser), encoded);
       notifyListeners();
+      if (removedDuplicates) _saveRemote(encoded);
     } catch (_) {
       // Bozuk uzak veri mevcut yerel verinin üzerine yazılmaz.
     }
@@ -104,30 +108,8 @@ class DataStore extends ChangeNotifier {
   /// Aynı Gmail adresine ait eski/çift yerel kayıtları tek danışanda birleştirir.
   /// Randevular da korunan danışan kaydına taşınır; e-posta karşılaştırması
   /// isimden bağımsız ve küçük/büyük harf duyarsız yapılır.
-  void deduplicateClientsByEmail([AppData? target]) {
-    final value = target ?? data;
-    final byEmail = <String, Client>{};
-    final duplicateIds = <String, String>{};
-    for (final client in value.clients) {
-      final email = client.email.trim().toLowerCase();
-      if (email.isEmpty) continue;
-      final keeper = byEmail[email];
-      if (keeper == null) {
-        byEmail[email] = client;
-      } else {
-        if (keeper.clientUserId.isEmpty && client.clientUserId.isNotEmpty) {
-          keeper.clientUserId = client.clientUserId;
-        }
-        duplicateIds[client.id] = keeper.id;
-      }
-    }
-    if (duplicateIds.isEmpty) return;
-    for (final appointment in value.appointments) {
-      final replacement = duplicateIds[appointment.clientId];
-      if (replacement != null) appointment.clientId = replacement;
-    }
-    value.clients.removeWhere((client) => duplicateIds.containsKey(client.id));
-  }
+  bool deduplicateClientsByEmail([AppData? target]) =>
+      client_dedup.deduplicateClientsByEmail(target ?? data);
 
   /// Uzak kopyada yalnızca yol saklanan PDF'leri indirip `dataUrl` alanını
   /// doldurur. Böylece PDF kütüphanesi ekranda her zaman yerel çalışır.
@@ -154,6 +136,7 @@ class DataStore extends ChangeNotifier {
   void save() {
     final u = accounts.current;
     if (u == null) return;
+    deduplicateClientsByEmail();
     final encoded = jsonEncode(data.toJson());
     _prefs.setString(accounts.dataKey(u), encoded);
     notifyListeners();

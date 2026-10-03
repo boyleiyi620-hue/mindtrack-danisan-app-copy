@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mindtrack-static-v5';
+const CACHE_NAME = 'mindtrack-static-v6';
 const STATIC_FILE = /\.(?:js|wasm|json|png|jpg|jpeg|gif|svg|ico|otf|ttf|woff2?)$/i;
 
 self.addEventListener('install', (event) => {
@@ -27,15 +27,17 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Ağdan güncel dosyayı al; yalnızca bağlantı yoksa cache'e düş. Cache-first
+  // davranışı, aynı isimle yayımlanan main.dart.js dosyasını sonsuza dek eski
+  // sürümde tutarak sunucu düzeltmelerinin kullanıcıya ulaşmasını engelliyordu.
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).then((response) => {
+    fetch(event.request)
+      .then((response) => {
         if (!response || !response.ok) return response;
         const copy = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
         return response;
-      });
-    }),
+      })
+      .catch(() => caches.match(event.request)),
   );
 });
