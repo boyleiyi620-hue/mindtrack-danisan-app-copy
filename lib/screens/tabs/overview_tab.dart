@@ -128,23 +128,6 @@ class _OverviewTabState extends State<OverviewTab> {
           spacing: 8,
           runSpacing: 8,
           children: [
-            OutlinedButton.icon(
-              onPressed: () {
-                _data.loadDemoData();
-                ScaffoldMessenger.of(context)
-                  ..hideCurrentSnackBar()
-                  ..showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Örnek veriler yüklendi.',
-                        style: TextStyle(),
-                      ),
-                    ),
-                  );
-              },
-              icon: const Icon(Icons.auto_awesome, size: 16),
-              label: const Text('Örnek Veri Yükle', style: TextStyle()),
-            ),
             FilledButton.icon(
               onPressed: () => widget.onNavigate?.call('clients'),
               icon: const Icon(Icons.person_add_alt, size: 17),

@@ -108,6 +108,8 @@ class _SettingsTabState extends State<SettingsTab> {
                       const SizedBox(height: 16),
                       _exportCard(),
                       const SizedBox(height: 16),
+                      _sampleDataCard(),
+                      const SizedBox(height: 16),
                       _dataCard(),
                       const SizedBox(height: 16),
                       _aboutCard(),
@@ -558,7 +560,7 @@ class _SettingsTabState extends State<SettingsTab> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
-            'Seçtiğiniz hafta veya ay için randevuları, danışan bilgilerini ve durum dağılımını uygulama temasında hazırlayın.',
+            'Seçtiğiniz hafta veya ay için randevuları, danışanları, gönderilen formları, seans notu özetlerini ve değerlendirmeleri uygulama temasında hazırlayın.',
             style: TextStyle(
               fontSize: 12.5,
               color: AppColors.text2,
@@ -579,6 +581,55 @@ class _SettingsTabState extends State<SettingsTab> {
       ),
     );
   }
+
+  Future<void> _loadDemoData() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Örnek veri ekle'),
+        content: const Text(
+          'Raporları ve uygulama özelliklerini denemeniz için örnek danışan, randevu ve kayıtlar eklenecek. Mevcut verileriniz silinmez.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Örnekleri Ekle'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    widget.data.loadDemoData();
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Örnek veriler eklendi.')),
+    );
+  }
+
+  Widget _sampleDataCard() => _card(
+    Icons.auto_awesome_outlined,
+    'Örnek Veriler',
+    Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Uygulamayı ve raporları denemek için örnek danışan ve kayıtlar ekleyin. Mevcut verileriniz korunur.',
+          style: TextStyle(fontSize: 12.5, color: AppColors.text2, height: 1.5),
+        ),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          key: const Key('settings-load-demo-data'),
+          onPressed: _loadDemoData,
+          icon: const Icon(Icons.auto_awesome, size: 16),
+          label: const Text('Örnek Veri Ekle', style: TextStyle()),
+        ),
+      ],
+    ),
+  );
 
   // ---------------- Dışa Aktarım ----------------
   Widget _exportCard() {

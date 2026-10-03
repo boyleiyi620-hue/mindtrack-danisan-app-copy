@@ -329,16 +329,6 @@ class _FormsTabState extends State<FormsTab> {
                 icon: const Icon(Icons.edit_note, size: 15),
                 label: const Text('Doldur', style: TextStyle(fontSize: 12.5)),
               ),
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  minimumSize: const Size(0, 36),
-                ),
-                onPressed: () => _openIncomingResponses(f),
-                icon: const Icon(Icons.inbox_outlined, size: 15),
-                label: const Text('Cevaplar', style: TextStyle(fontSize: 12.5)),
-              ),
               FilledButton.icon(
                 style: FilledButton.styleFrom(
                   visualDensity: VisualDensity.compact,

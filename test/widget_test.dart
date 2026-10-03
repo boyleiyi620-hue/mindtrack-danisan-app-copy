@@ -57,6 +57,19 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  Future<void> loadDemoDataFromSettings(WidgetTester tester) async {
+    await tester.tap(find.text('Ayarlar').last);
+    await tester.pumpAndSettle();
+    final addExamples = find.byKey(const Key('settings-load-demo-data'));
+    await tester.ensureVisible(addExamples);
+    await tester.tap(addExamples);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Örnekleri Ekle'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Genel Bakış').last);
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('oturum yokken giriş ekranı gösterilir', (tester) async {
     final store = await AccountStore.init();
     final data = DataStore(store);
@@ -189,8 +202,7 @@ void main() {
     await tester.pumpWidget(MindTrackApp(store: store, data: data));
 
     await registerViaUi(tester, 'Randevu Test', 'randevu@klinik.com');
-    await tester.tap(find.text('Örnek Veri Yükle'));
-    await tester.pumpAndSettle();
+    await loadDemoDataFromSettings(tester);
 
     await tester.tap(find.text('Randevular'));
     await tester.pumpAndSettle();
@@ -226,8 +238,7 @@ void main() {
     await tester.pumpWidget(MindTrackApp(store: store, data: data));
 
     await registerViaUi(tester, 'Geçmiş Test', 'gecmis@klinik.com');
-    await tester.tap(find.text('Örnek Veri Yükle'));
-    await tester.pumpAndSettle();
+    await loadDemoDataFromSettings(tester);
     await tester.tap(find.text('Randevular'));
     await tester.pumpAndSettle();
 
@@ -257,8 +268,7 @@ void main() {
     await tester.pumpWidget(MindTrackApp(store: store, data: data));
 
     await registerViaUi(tester, 'Tekrar Test', 'tekrar@klinik.com');
-    await tester.tap(find.text('Örnek Veri Yükle'));
-    await tester.pumpAndSettle();
+    await loadDemoDataFromSettings(tester);
     await tester.tap(find.text('Randevular'));
     await tester.pumpAndSettle();
 
@@ -581,8 +591,7 @@ void main() {
     await tester.pumpWidget(MindTrackApp(store: store, data: data));
 
     await registerViaUi(tester, 'Pano Test', 'pano@klinik.com');
-    await tester.tap(find.text('Örnek Veri Yükle'));
-    await tester.pump();
+    await loadDemoDataFromSettings(tester);
 
     expect(find.text('Yaklaşan Randevular'), findsOneWidget);
     expect(find.text('Bu Ay Değerlendirme'), findsOneWidget);
@@ -609,8 +618,7 @@ void main() {
     await tester.pumpWidget(MindTrackApp(store: store, data: data));
 
     await registerViaUi(tester, 'Görev Test', 'gorev@klinik.com');
-    await tester.tap(find.text('Örnek Veri Yükle'));
-    await tester.pumpAndSettle();
+    await loadDemoDataFromSettings(tester);
 
     await tester.tap(find.text('Görevler'));
     await tester.pumpAndSettle();
@@ -697,8 +705,7 @@ void main() {
       await tester.pumpWidget(MindTrackApp(store: store, data: data));
 
       await registerViaUi(tester, 'PDF Test', 'pdf@klinik.com');
-      await tester.tap(find.text('Örnek Veri Yükle'));
-      await tester.pumpAndSettle();
+      await loadDemoDataFromSettings(tester);
 
       await tester.tap(find.text('PDF Kütüphanesi'));
       await tester.pumpAndSettle();
@@ -776,8 +783,7 @@ void main() {
     await tester.pumpWidget(MindTrackApp(store: store, data: data));
 
     await registerViaUi(tester, 'Ayarlar Test', 'ayar@klinik.com');
-    await tester.tap(find.text('Örnek Veri Yükle'));
-    await tester.pumpAndSettle();
+    await loadDemoDataFromSettings(tester);
     // Demo snackbar'ının bitmesini bekle (sonraki snackbar'ları kuyrukta tutmasın).
     await tester.pump(const Duration(seconds: 5));
     await tester.pumpAndSettle();
@@ -881,8 +887,7 @@ void main() {
 
     // Boş durumda 6 istatistik kartı da 0 gösterir.
     expect(find.text('0'), findsNWidgets(6));
-    await tester.tap(find.text('Örnek Veri Yükle'));
-    await tester.pump();
+    await loadDemoDataFromSettings(tester);
     // Örnek veride 3 danışan vardır → Danışan kartı "3" gösterir.
     expect(find.text('3'), findsOneWidget);
 
