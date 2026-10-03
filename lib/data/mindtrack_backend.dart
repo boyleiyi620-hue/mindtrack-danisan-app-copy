@@ -607,8 +607,12 @@ class MindTrackBackend {
     if (!isReady) return Stream.value(const <Map<String, dynamic>>[]);
     final controller = StreamController<List<Map<String, dynamic>>>();
     late final RealtimeChannel channel;
+    Timer? refreshTimer;
+    var emitting = false;
 
     Future<void> emit() async {
+      if (emitting || controller.isClosed) return;
+      emitting = true;
       try {
         final rows = await _select(table, filters);
         if (controller.isClosed) return;
@@ -629,6 +633,8 @@ class MindTrackBackend {
         controller.add(mapped);
       } catch (_) {
         // Ağ hatası akışı kesmez; bir sonraki değişiklikte yeniden denenir.
+      } finally {
+        emitting = false;
       }
     }
 
@@ -652,7 +658,14 @@ class MindTrackBackend {
       if (status == RealtimeSubscribeStatus.subscribed) emit();
     });
 
+    // Supabase Realtime bağlantısı tarayıcı uykuya geçtiğinde, ağ değiştiğinde
+    // veya proxy/websocket bağlantısı koptuğunda olay kaçırabilir. Realtime
+    // olaylarını korurken kısa bir sorgu yedeği kullanmak, talep/onay
+    // değişikliklerinin uygulamadan çıkıp girmeden görünmesini garanti eder.
+    refreshTimer = Timer.periodic(const Duration(seconds: 2), (_) => emit());
+
     controller.onCancel = () async {
+      refreshTimer?.cancel();
       await _db.removeChannel(channel);
     };
     return controller.stream;
