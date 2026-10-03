@@ -28397,7 +28397,7 @@ this.b=b},
 afl(){var s=0,r=A.A(t.H)
 var $async$afl=A.B(function(a,b){if(a===1)return A.x(b,r)
 for(;;)switch(s){case 0:s=2
-return A.u(A.ao3("sb_publishable_-2LSJNP29XcL3ykiRQ8aaQ_kxZ7aKAn","https://yfxepfxgiceplghlrxek.supabase.co"),$async$afl)
+return A.u(A.ao3("sb_publishable_ugqE_bZ_IyNedJMk1I_saA_-eMtQAjE","https://aqswdmhwqhrsempoiqfv.supabase.co"),$async$afl)
 case 2:return A.y(null,r)}})
 return A.z($async$afl,r)},
 aMu(a,b){switch(b){case"23505":return"Bu kay\u0131t zaten mevcut."
