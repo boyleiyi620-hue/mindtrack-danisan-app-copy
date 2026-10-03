@@ -56,7 +56,8 @@ build_target() {
   rm -rf "$BUILD_DIR/web" "$BUILD_DIR/$output"
   "$FLUTTER_BIN" build web --release --no-wasm-dry-run -t "lib/$target" "${DEFINES[@]}"
   cp -a "$BUILD_DIR/web" "$BUILD_DIR/$output"
-  # Önceki Flutter sürümünün service worker cache'ini kullanan tarayıcıları temizle.
+  # Uygulama paketlerini tarayıcıda cache'le; Supabase API istekleri service worker
+  # kapsamı dışında bırakılır.
   cp "$WEB_DIR/disable_flutter_service_worker.js" \
     "$BUILD_DIR/$output/flutter_service_worker.js"
   # SPA rewrite olmadan derin bağlantılar 404 döner; bu dosya çıktının parçasıdır.

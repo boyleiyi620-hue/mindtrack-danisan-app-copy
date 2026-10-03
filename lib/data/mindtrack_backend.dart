@@ -603,8 +603,17 @@ class MindTrackBackend {
         if (controller.isClosed) return;
         final mapped = <Map<String, dynamic>>[];
         for (final row in rows) {
-          // `rowMapper` sonuç döndürmezse satır olduğu gibi aktarılır.
-          mapped.add(rowMapper?.call(row) ?? row);
+          // Mapper null döndürdüğünde satır bilinçli olarak filtrelenmiştir
+          // (ör. yalnızca pending randevu talepleri). Bu satırları tekrar
+          // eklemek psikolog ekranında eski taleplerin Onayla görünmesine ve
+          // approve RPC'sinin "bekleyen kayıt bulunamadı" hatası vermesine
+          // neden oluyordu.
+          if (rowMapper == null) {
+            mapped.add(row);
+          } else {
+            final mappedRow = rowMapper(row);
+            if (mappedRow != null) mapped.add(mappedRow);
+          }
         }
         controller.add(mapped);
       } catch (_) {
