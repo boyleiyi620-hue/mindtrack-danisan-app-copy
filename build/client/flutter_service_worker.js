@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mindtrack-static-v6';
+const CACHE_NAME = 'mindtrack-static-v7';
 const STATIC_FILE = /\.(?:js|wasm|json|png|jpg|jpeg|gif|svg|ico|otf|ttf|woff2?)$/i;
 
 self.addEventListener('install', (event) => {
@@ -16,7 +16,19 @@ self.addEventListener('activate', (event) => {
             .map((name) => caches.delete(name)),
         ),
       )
-      .then(() => self.clients.claim()),
+      .then(() => self.clients.claim())
+      .then(async () => {
+        // Existing tabs keep running their old Flutter bundle until navigated.
+        // Reload them once when this worker activates so users receive the
+        // fixed appointment filtering and action handlers immediately.
+        const windows = await self.clients.matchAll({
+          type: 'window',
+          includeUncontrolled: true,
+        });
+        await Promise.all(
+          windows.map((client) => client.navigate(client.url).catch(() => null)),
+        );
+      }),
   );
 });
 
