@@ -641,18 +641,31 @@ class MindTrackBackend {
     channel = _db.channel(
       'mt:$table:${filters.entries.map((e) => '${e.key}=${e.value}').join('|')}',
     );
-    final firstKey = filters.keys.first;
-    channel.onPostgresChanges(
-      event: PostgresChangeEvent.all,
-      schema: 'public',
-      table: table,
-      filter: PostgresChangeFilter(
-        type: PostgresChangeFilterType.eq,
-        column: firstKey,
-        value: filters[firstKey].toString(),
-      ),
-      callback: (_) => emit(),
-    );
+    // appointments satırları UPDATE olduğunda UUID filtreli Realtime kanalı
+    // bazı tarayıcı/proxy bağlantılarında olayı kaçırabiliyor. RLS zaten
+    // sorgu sonucunu kullanıcının kendi satırlarıyla sınırlandırdığı için bu
+    // tabloda filtresiz kanal kullanıp güvenli filtrelemeyi SELECT'e bırak.
+    if (table == 'appointments') {
+      channel.onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: table,
+        callback: (_) => emit(),
+      );
+    } else {
+      final firstKey = filters.keys.first;
+      channel.onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: table,
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: firstKey,
+          value: filters[firstKey].toString(),
+        ),
+        callback: (_) => emit(),
+      );
+    }
 
     channel.subscribe((status, error) {
       if (status == RealtimeSubscribeStatus.subscribed) emit();
