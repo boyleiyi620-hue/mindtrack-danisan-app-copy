@@ -255,11 +255,8 @@ class _PendingAppointmentRequestsState
     Map<String, dynamic> request,
   ) async {
     try {
-      await MindTrackBackend.instance.updateSharedAppointment(
+      await MindTrackBackend.instance.rejectAppointmentRequest(
         request['id'].toString(),
-        status: 'rejected',
-        at: _requestDate(request),
-        linkedAppointmentId: request['linkedAppointmentId']?.toString() ?? '',
       );
       if (mounted) {
         setState(() => _resolvedRequestIds.add(request['id'].toString()));
@@ -279,18 +276,18 @@ class _PendingAppointmentRequestsState
 }
 
 String _requestName(Map<String, dynamic> data) {
-  final direct = data['clientName']?.toString().trim() ?? '';
+  final direct = (data['clientName'] ?? data['client_name'])?.toString().trim() ?? '';
   if (direct.isNotEmpty) return direct;
-  final first = data['clientFirstName']?.toString().trim() ?? '';
-  final last = data['clientLastName']?.toString().trim() ?? '';
+  final first = (data['clientFirstName'] ?? data['client_first_name'])?.toString().trim() ?? '';
+  final last = (data['clientLastName'] ?? data['client_last_name'])?.toString().trim() ?? '';
   final joined = [first, last].where((value) => value.isNotEmpty).join(' ');
   if (joined.isNotEmpty) return joined;
-  final email = data['clientEmail']?.toString().trim() ?? '';
+  final email = (data['clientEmail'] ?? data['client_email'])?.toString().trim() ?? '';
   return email.isEmpty ? 'Bilinmeyen Danışan' : email.split('@').first;
 }
 
 DateTime _requestDate(Map<String, dynamic> data) {
-  final raw = data['date'];
+  final raw = data['date'] ?? data['appointment_at'] ?? data['appointmentAt'];
   if (raw is DateTime) return raw;
   if (raw is String) return DateTime.tryParse(raw)?.toLocal() ?? DateTime(2100);
   if (raw is num) return DateTime.fromMillisecondsSinceEpoch(raw.toInt());

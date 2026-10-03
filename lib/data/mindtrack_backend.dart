@@ -384,6 +384,17 @@ class MindTrackBackend {
     });
   }
 
+  /// Psikologun bekleyen talebi reddetmesi. Ayrı RPC kullanılır; reddetme
+  /// işleminde tarih veya yerel randevu kimliği gerekmez.
+  Future<void> rejectAppointmentRequest(String id) async {
+    await _guard(() async {
+      await _db.rpc(
+        'reject_appointment_request',
+        params: {'p_id': id},
+      );
+    });
+  }
+
   /// Psikologun ortak randevuda yaptığı durum veya saat değişikliğini yazar.
   /// Aynı satır danışan tarafından izlendiği için Realtime ile iki uygulama
   /// anında aynı sonucu görür.
