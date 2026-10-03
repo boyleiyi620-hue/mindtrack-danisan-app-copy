@@ -98260,7 +98260,26 @@ s=A.Z(new A.ct(J.eO(a,new A.afB(this.a),t.nA),s),s.i("G.E"))
 return s},
 $S:594}
 A.afB.prototype={
-$1(a){return A.a0(["id",a.h(0,"id"),"clientUserId",a.h(0,"client_uid"),"clientRef",a.h(0,"client_ref"),"clientName",a.h(0,"client_name"),"clientFirstName",a.h(0,"client_first_name"),"clientLastName",a.h(0,"client_last_name"),"clientEmail",a.h(0,"client_email"),"date",a.h(0,"appointment_at"),"status",a.h(0,"status"),"type",a.h(0,"type"),"linkedAppointmentId",a.h(0,"linked_appointment_id"),"cancelledBy",a.h(0,"cancelled_by"),"createdAtMs",A.aMK(a.h(0,"created_at"))],t.N,t.z)},
+$1(a){var s,r,q,p,o,n,m,l,k,j="linkedAppointmentId",i=a.h(0,"id"),h=a.h(0,"client_uid")
+if(h==null)h=a.h(0,"clientUserId")
+s=a.h(0,"client_ref")
+if(s==null)s=a.h(0,"clientRef")
+r=a.h(0,"client_name")
+if(r==null)r=a.h(0,"clientName")
+q=a.h(0,"client_first_name")
+if(q==null)q=a.h(0,"clientFirstName")
+p=a.h(0,"client_last_name")
+if(p==null)p=a.h(0,"clientLastName")
+o=a.h(0,"client_email")
+if(o==null)o=a.h(0,"clientEmail")
+n=a.h(0,"appointment_at")
+if(n==null)n=a.h(0,"date")
+if(n==null)n=a.h(0,"appointmentAt")
+m=a.h(0,"status")
+l=a.h(0,"type")
+k=a.h(0,"linked_appointment_id")
+if(k==null)k=a.h(0,j)
+return A.a0(["id",i,"clientUserId",h,"clientRef",s,"clientName",r,"clientFirstName",q,"clientLastName",p,"clientEmail",o,"date",n,"status",m,"type",l,j,k,"cancelledBy",a.h(0,"cancelled_by"),"createdAtMs",A.aMK(a.h(0,"created_at"))],t.N,t.z)},
 $S:122}
 A.afs.prototype={
 $0(){var s=0,r=A.A(t.N),q,p=this,o,n,m
