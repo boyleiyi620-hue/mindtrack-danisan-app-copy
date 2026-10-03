@@ -2,6 +2,13 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 
+const bootstrap = await readFile(
+  new URL('../web/flutter_bootstrap.js', import.meta.url),
+  'utf8',
+);
+assert.match(bootstrap, /canvasKitForceCpuOnly:\s*!mindtrackHasWebGL/);
+assert.match(bootstrap, /getContext\('webgl2'\).*getContext\('webgl'\)/s);
+
 const source = await readFile(
   new URL('../web/disable_flutter_service_worker.js', import.meta.url),
   'utf8',
