@@ -8,6 +8,7 @@ const source = await readFile(
 );
 const handlers = new Map();
 let fetchCount = 0;
+let navigationCount = 0;
 const oldResponse = new Response('old cached bundle');
 const context = {
   URL,
@@ -17,7 +18,17 @@ const context = {
     location: { origin: 'https://app.test' },
     addEventListener: (name, handler) => handlers.set(name, handler),
     skipWaiting: async () => {},
-    clients: { claim: async () => {} },
+    clients: {
+      claim: async () => {},
+      matchAll: async () => [
+        {
+          url: 'https://app.test/',
+          navigate: async () => {
+            navigationCount += 1;
+          },
+        },
+      ],
+    },
   },
   caches: {
     keys: async () => [],
@@ -31,6 +42,11 @@ const context = {
   },
 };
 vm.runInNewContext(source, context);
+
+let activation;
+handlers.get('activate')({ waitUntil: (promise) => (activation = promise) });
+await activation;
+assert.equal(navigationCount, 1, 'activation must reload existing app tabs');
 
 let networkResponse;
 handlers.get('fetch')({
