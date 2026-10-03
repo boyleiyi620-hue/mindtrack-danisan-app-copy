@@ -36,8 +36,8 @@ Bu iki değeri almak, veritabanı tablolarını oluşturmak ve Free planı yapı
 flutter pub get
 
 # 2) Supabase bağlantısı
-export SUPABASE_URL="https://yfxepfxgiceplghlrxek.supabase.co"
-export SUPABASE_PUBLISHABLE_KEY="sb_publishable_-2LSJNP29XcL3ykiRQ8aaQ_kxZ7aKAn"
+export SUPABASE_URL="https://aqswdmhwqhrsempoiqfv.supabase.co"
+export SUPABASE_PUBLISHABLE_KEY="sb_publishable_ugqE_bZ_IyNedJMk1I_saA_-eMtQAjE"
 
 # 3) Psikolog + danışan web çıktısı
 ./scripts/build_web.sh

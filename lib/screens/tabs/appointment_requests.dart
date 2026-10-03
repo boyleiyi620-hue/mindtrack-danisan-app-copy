@@ -41,6 +41,7 @@ class _PendingAppointmentRequestsState
             )
             .toList()
           ..sort((a, b) => _requestDate(a).compareTo(_requestDate(b)));
+        if (requests.isEmpty) return const SizedBox.shrink();
         return Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(

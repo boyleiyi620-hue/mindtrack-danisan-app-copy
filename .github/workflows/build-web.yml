@@ -25,8 +25,8 @@ jobs:
 
       - name: Build web bundles
         env:
-          SUPABASE_URL: https://yfxepfxgiceplghlrxek.supabase.co
-          SUPABASE_PUBLISHABLE_KEY: sb_publishable_-2LSJNP29XcL3ykiRQ8aaQ_kxZ7aKAn
+          SUPABASE_URL: https://aqswdmhwqhrsempoiqfv.supabase.co
+          SUPABASE_PUBLISHABLE_KEY: sb_publishable_ugqE_bZ_IyNedJMk1I_saA_-eMtQAjE
         run: |
           flutter pub get
           ./scripts/build_web.sh
