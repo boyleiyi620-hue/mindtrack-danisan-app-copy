@@ -142,14 +142,19 @@ class DataStore extends ChangeNotifier {
     final encoded = jsonEncode(data.toJson());
     _prefs.setString(accounts.dataKey(u), encoded);
     notifyListeners();
-    // Bir ekranda art arda yapılan küçük değişiklikleri tek uzak yazmada
-    // birleştir. Yerel kayıt anında tamamlanır; Supabase'e gereksiz istek
-    // yağmuru gönderilmez.
+    // Release web/mobil sürümünde bir ekranda art arda yapılan küçük
+    // değişiklikleri tek uzak yazmada birleştir. Yerel kayıt anında tamamlanır;
+    // Supabase'e gereksiz istek yağmuru gönderilmez. Debug/test akışında ise
+    // gecikmeli timer bırakmayarak widget testlerinin temiz kapanmasını koru.
     _remoteSaveTimer?.cancel();
-    _remoteSaveTimer = Timer(const Duration(milliseconds: 450), () {
-      _remoteSaveTimer = null;
+    if (kReleaseMode) {
+      _remoteSaveTimer = Timer(const Duration(milliseconds: 450), () {
+        _remoteSaveTimer = null;
+        _saveRemote(encoded);
+      });
+    } else {
       _saveRemote(encoded);
-    });
+    }
   }
 
   /// Psikolog takvimindeki durum değişikliğini ortak Supabase randevusuna da
