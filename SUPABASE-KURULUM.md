@@ -7,8 +7,8 @@
 > | | |
 > | --- | --- |
 > | Proje adı | `mindtrack` |
-> | Project ref | `yfxepfxgiceplghlrxek` |
-> | URL | `https://yfxepfxgiceplghlrxek.supabase.co` |
+> | Project ref | `aqswdmhwqhrsempoiqfv` |
+> | URL | `https://aqswdmhwqhrsempoiqfv.supabase.co` |
 > | Bölge | `ap-northeast-2` (Seoul) |
 > | Plan | Free |
 > | Migration | `20260929120000`, `20260929120100` uygulanmış; `20260929133000` uygulanmalı |
@@ -224,14 +224,14 @@ Dashboard → **Project Settings → API**
 
 | Değer | Değer |
 | --- | --- |
-| **Project URL** | `https://yfxepfxgiceplghlrxek.supabase.co` |
-| **Publishable key** | `sb_publishable_-2LSJNP29XcL3ykiRQ8aaQ_kxZ7aKAn` |
+| **Project URL** | `https://aqswdmhwqhrsempoiqfv.supabase.co` |
+| **Publishable key** | `sb_publishable_ugqE_bZ_IyNedJMk1I_saA_-eMtQAjE` |
 
 **Kopyala-yapıştır:**
 
 ```bash
-export SUPABASE_URL="https://yfxepfxgiceplghlrxek.supabase.co"
-export SUPABASE_PUBLISHABLE_KEY="sb_publishable_-2LSJNP29XcL3ykiRQ8aaQ_kxZ7aKAn"
+export SUPABASE_URL="https://aqswdmhwqhrsempoiqfv.supabase.co"
+export SUPABASE_PUBLISHABLE_KEY="sb_publishable_ugqE_bZ_IyNedJMk1I_saA_-eMtQAjE"
 ```
 
 > Publishable (`sb_publishable_…`) anahtarı istemci uygulamalarda kullanılmak
@@ -263,8 +263,8 @@ Anahtar ve URL **derleme zamanında** verilir; kaynak koda gömülmez.
 ```bash
 flutter pub get
 
-export SUPABASE_URL="https://yfxepfxgiceplghlrxek.supabase.co"
-export SUPABASE_PUBLISHABLE_KEY="sb_publishable_-2LSJNP29XcL3ykiRQ8aaQ_kxZ7aKAn"
+export SUPABASE_URL="https://aqswdmhwqhrsempoiqfv.supabase.co"
+export SUPABASE_PUBLISHABLE_KEY="sb_publishable_ugqE_bZ_IyNedJMk1I_saA_-eMtQAjE"
 
 ./scripts/build_web.sh
 ```

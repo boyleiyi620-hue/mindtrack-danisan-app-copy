@@ -27,6 +27,7 @@ class DataStore extends ChangeNotifier {
   bool _remoteLoading = false;
   bool _remoteSaving = false;
   String? _pendingRemoteEncoded;
+  Timer? _remoteSaveTimer;
   StreamSubscription<Map<String, dynamic>?>? _remoteSubscription;
 
   DataStore(this.accounts) {
@@ -129,6 +130,7 @@ class DataStore extends ChangeNotifier {
 
   @override
   void dispose() {
+    _remoteSaveTimer?.cancel();
     _remoteSubscription?.cancel();
     super.dispose();
   }
@@ -140,7 +142,14 @@ class DataStore extends ChangeNotifier {
     final encoded = jsonEncode(data.toJson());
     _prefs.setString(accounts.dataKey(u), encoded);
     notifyListeners();
-    _saveRemote(encoded);
+    // Bir ekranda art arda yapılan küçük değişiklikleri tek uzak yazmada
+    // birleştir. Yerel kayıt anında tamamlanır; Supabase'e gereksiz istek
+    // yağmuru gönderilmez.
+    _remoteSaveTimer?.cancel();
+    _remoteSaveTimer = Timer(const Duration(milliseconds: 450), () {
+      _remoteSaveTimer = null;
+      _saveRemote(encoded);
+    });
   }
 
   /// Psikolog takvimindeki durum değişikliğini ortak Supabase randevusuna da

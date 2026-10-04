@@ -23,8 +23,8 @@ Supabase projesi kurulduktan sonra ([SUPABASE-KURULUM.md](SUPABASE-KURULUM.md)):
 
 ```bash
 flutter pub get
-export SUPABASE_URL="https://yfxepfxgiceplghlrxek.supabase.co"
-export SUPABASE_PUBLISHABLE_KEY="sb_publishable_-2LSJNP29XcL3ykiRQ8aaQ_kxZ7aKAn"
+export SUPABASE_URL="https://aqswdmhwqhrsempoiqfv.supabase.co"
+export SUPABASE_PUBLISHABLE_KEY="sb_publishable_ugqE_bZ_IyNedJMk1I_saA_-eMtQAjE"
 ./scripts/build_web.sh
 ```
 

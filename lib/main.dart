@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show AuthState;
 
@@ -40,6 +41,19 @@ class AuthGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!MindTrackBackend.instance.isReady && kReleaseMode) {
+      return const Scaffold(
+        body: Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              'Sunucu bağlantısı kurulamadı. Lütfen internet bağlantınızı kontrol edip tekrar deneyin.',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    }
     return StreamBuilder<AuthState>(
       stream: MindTrackBackend.instance.authStateChanges(),
       builder: (context, snapshot) {

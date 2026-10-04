@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/account_store.dart';
@@ -141,10 +142,15 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Future<void> _signInBackend(String email, String pass) async {
     final backend = MindTrackBackend.instance;
-    // Supabase hiçbaşlatılmadıysa (yapılandırma eksik, test ortamı)
-    // uzak doğrulama yapılamaz; yerel hesapla devam edilir. `main()` de
-    // arka uç hazır değilken uygulamanın açılabilmesini öngörüyor.
-    if (!backend.isReady) return;
+    // Üretimde uzak doğrulama başarısızsa yerel hesapla devam etmek SaaS
+    // izolasyonunu ve sunucu tarafı yetkilendirmeyi bozar. Debug testlerinde
+    // Supabase'siz widget testlerini çalıştırabilmek için istisna korunur.
+    if (!backend.isReady) {
+      if (kReleaseMode) {
+        throw 'Sunucu bağlantısı hazır değil. Lütfen biraz sonra tekrar deneyin.';
+      }
+      return;
+    }
 
     try {
       await backend.signIn(email, pass);
@@ -178,6 +184,9 @@ class _AuthScreenState extends State<AuthScreen> {
       createdAt: DateTime.now().millisecondsSinceEpoch.toDouble(),
       appMode: '', // Trigger mode selection on first login
     );
+    if (!MindTrackBackend.instance.isReady && kReleaseMode) {
+      throw 'Sunucu bağlantısı hazır değil. Hesap oluşturulamadı.';
+    }
     if (MindTrackBackend.instance.isReady) {
       try {
         await MindTrackBackend.instance.signUp(

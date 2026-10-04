@@ -8,7 +8,7 @@
 #   supabase link --project-ref <proje-ref>
 #   supabase db push
 
-project_id = "yfxepfxgiceplghlrxek"
+project_id = "aqswdmhwqhrsempoiqfv"
 
 [api]
 enabled = true
@@ -20,7 +20,7 @@ max_rows = 1000
 [db]
 port = 54322
 major_version = 17
-# Uzak proje: yfxepfxgiceplghlrxek (bölge: ap-northeast-2 / Seoul)
+# Uzak proje: aqswdmhwqhrsempoiqfv
 
 [studio]
 enabled = true

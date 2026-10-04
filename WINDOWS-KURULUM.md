@@ -29,7 +29,7 @@ proje klasöründeki  SUPABASE-KURULUM.md  dosyasında anlatılıyor.
 
 Ardından şu iki değeri bul ve bir yere not et:
 
-  SUPABASE_URL       =  https://yfxepfxgiceplghlrxek.supabase.co
+  SUPABASE_URL       =  https://aqswdmhwqhrsempoiqfv.supabase.co
   SUPABASE_PUBLISHABLE_KEY  =  panelde verilen "sb_publishable_…" publishable anahtar
   SUPABASE_PUBLISHABLE_KEY  =  panelde verilen "sb_publishable_…" publishable anahtar
 
@@ -98,7 +98,7 @@ BÖLÜM 3 — APK DERLE (EN ÖNEMLİ ADIM)
 
    PSİKOLOG APK'sı için şu komutu yaz:
 
-     flutter build apk --release --flavor psychologist --dart-define=SUPABASE_URL="https://yfxepfxgiceplghlrxek.supabase.co" --dart-define=SUPABASE_PUBLISHABLE_KEY="sb_publishable_-2LSJNP29XcL3ykiRQ8aaQ_kxZ7aKAn"
+     flutter build apk --release --flavor psychologist --dart-define=SUPABASE_URL="https://aqswdmhwqhrsempoiqfv.supabase.co" --dart-define=SUPABASE_PUBLISHABLE_KEY="sb_publishable_ugqE_bZ_IyNedJMk1I_saA_-eMtQAjE"
 
    - Tırnak işaretlerini de yazmayı unutma.
    - --dart-define=... KISMı OLMAZSA APK AÇILIR AMA GİRİŞ YAPAMAZSIN.
