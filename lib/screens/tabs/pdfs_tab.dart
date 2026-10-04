@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
@@ -11,8 +12,12 @@ import '../../utils/formats.dart';
 import '../pdfs/pdf_platform.dart';
 import '../pdfs/pdf_viewer_screen.dart';
 
-const _maxDocBytes = 2 * 1024 * 1024;
-const _warnBytes = 4.2 * 1024 * 1024;
+/// Tek dosya üst sınırı. Klinikte telefonla çekilmiş form fotoğrafları ve
+/// taranmış protokoller 2-8 MB'a ulaşabildiği için 2 MB sınırı çok düşüktü.
+/// Veri artık `localStorage` yerine IndexedDB'de tutulduğundan bu sınır
+/// güvenli bir tavan olarak işlev görür.
+const _maxDocBytes = 10 * 1024 * 1024;
+const _warnBytes = 8 * 1024 * 1024;
 
 /// PDF Kütüphanesi — kategoriler, PDF yükleme ve görüntüleme.
 class PdfsTab extends StatefulWidget {
@@ -89,7 +94,7 @@ class _PdfsTabState extends State<PdfsTab> {
             const SizedBox(height: 4),
             Text(
               '$catCount kategori · $fileCount dosya · ${fmtBytes(totalSize)} · '
-              'Depolama ${widget.data.sizeLabel} / ~5 MB',
+              'Toplam kayıt ${widget.data.sizeLabel}',
               style: const TextStyle(fontSize: 13.5, color: AppColors.muted),
             ),
           ],
@@ -599,7 +604,7 @@ class _PdfsTabState extends State<PdfsTab> {
         messenger.showSnackBar(
           const SnackBar(
             content: Text(
-              'Dosya en fazla 2 MB olabilir (depolama sınırı).',
+              'Dosya başına en fazla 10 MB olabilir.',
               style: TextStyle(),
             ),
             behavior: SnackBarBehavior.floating,
@@ -649,13 +654,28 @@ class _PdfsTabState extends State<PdfsTab> {
     }
   }
 
-  void _openPdf(PdfFile f) {
+  /// Dosyayı açar; bu cihazda yoksa sunucudan indirir.
+  Future<void> _openPdf(PdfFile f) async {
     final messenger = ScaffoldMessenger.of(context);
-    final bytes = bytesFromDataUrl(f.dataUrl);
+    final fetching = needsRemoteFetch(f);
+    if (fetching) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('${f.name} indiriliyor…', style: const TextStyle()),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(milliseconds: 900),
+        ),
+      );
+    }
+    final bytes = await widget.data.pdfBytes(f);
+    if (!mounted) return;
     if (bytes.isEmpty) {
       messenger.showSnackBar(
         const SnackBar(
-          content: Text('Dosya içeriği bozuk.', style: TextStyle()),
+          content: Text(
+            'Dosya indirilemedi. Bağlantınızı kontrol edip tekrar deneyin.',
+            style: TextStyle(),
+          ),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -668,13 +688,21 @@ class _PdfsTabState extends State<PdfsTab> {
     );
   }
 
+  /// Dosya hâlâ sunucuda mı, yoksa bu cihazda mı?
+  bool needsRemoteFetch(PdfFile f) =>
+      f.dataUrl.isEmpty && f.storagePath.isNotEmpty;
+
   Future<void> _openExternal(PdfFile f) async {
     final messenger = ScaffoldMessenger.of(context);
-    final bytes = bytesFromDataUrl(f.dataUrl);
+    final bytes = await widget.data.pdfBytes(f);
+    if (!mounted) return;
     if (bytes.isEmpty) {
       messenger.showSnackBar(
         const SnackBar(
-          content: Text('Dosya içeriği bozuk.', style: TextStyle()),
+          content: Text(
+            'Dosya indirilemedi. Bağlantınızı kontrol edip tekrar deneyin.',
+            style: TextStyle(),
+          ),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -696,11 +724,15 @@ class _PdfsTabState extends State<PdfsTab> {
 
   Future<void> _download(PdfFile f) async {
     final messenger = ScaffoldMessenger.of(context);
-    final bytes = bytesFromDataUrl(f.dataUrl);
+    final bytes = await widget.data.pdfBytes(f);
+    if (!mounted) return;
     if (bytes.isEmpty) {
       messenger.showSnackBar(
         const SnackBar(
-          content: Text('Dosya içeriği bozuk.', style: TextStyle()),
+          content: Text(
+            'Dosya indirilemedi. Bağlantınızı kontrol edip tekrar deneyin.',
+            style: TextStyle(),
+          ),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -771,10 +803,17 @@ class _PdfsTabState extends State<PdfsTab> {
       ),
     );
     if (ok != true || !mounted) return;
+    final paths = _d.pdfFiles
+        .where((x) => x.catId == c.id)
+        .map((x) => x.storagePath)
+        .toList();
     _d.pdfCats.removeWhere((x) => x.id == c.id);
     _d.pdfFiles.removeWhere((x) => x.catId == c.id);
     if (_openCatId == c.id) _openCatId = null;
     widget.data.save();
+    // Kayıttan çıkarılan belgelerin ikilisi de depodan silinir; silinen
+    // kategori sonrası depoda öksüz dosya kalmaz (KVKK + maliyet).
+    unawaited(widget.data.purgeBlobs(paths));
     messenger.showSnackBar(
       const SnackBar(
         content: Text('Kategori silindi.', style: TextStyle()),
@@ -807,8 +846,10 @@ class _PdfsTabState extends State<PdfsTab> {
       ),
     );
     if (ok != true || !mounted) return;
+    final path = f.storagePath;
     _d.pdfFiles.removeWhere((x) => x.id == f.id);
     widget.data.save();
+    unawaited(widget.data.purgeBlobs([path]));
     messenger.showSnackBar(
       const SnackBar(
         content: Text('PDF silindi.', style: TextStyle()),

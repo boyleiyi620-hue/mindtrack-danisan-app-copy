@@ -1,7 +1,17 @@
 const CACHE_NAME = 'mindtrack-static-v10';
 const STATIC_FILE = /\.(?:js|wasm|json|png|jpg|jpeg|gif|svg|ico|otf|ttf|woff2?)$/i;
 
-self.addEventListener('install', () => {});
+// Yeni sürüm, açık sekmelerde kullanıcı notu yazıyorken devreye giremez.
+// Bu yüzden `skipWaiting()` burada çağrılmaz: yeni worker, mevcut sekmeler
+// kapanana kadar bekler. Uygulama kaydedilmemiş veri olmadığını doğruladıktan
+// sonra `SKIP_WAITING` mesajı gönderir ve güncelleme o an tamamlanır.
+//
+// Daha önce `activate` sırasında tüm sekmeler `client.navigate()` ile zorla
+// yenileniyordu. Psikolog seans notunu yazarken bir dağıtım yapıldığında yarım
+// kalan not sessizce kayboluyordu.
+self.addEventListener('install', () => {
+  // Bilerek boş: skipWaiting çağrılmaz.
+});
 
 self.addEventListener('message', (event) => {
   if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
@@ -20,6 +30,13 @@ self.addEventListener('activate', (event) => {
       )
       .then(() => self.clients.claim()),
   );
+});
+
+// Uygulama, kaydedilmemiş veri yokken güncellemeyi onaylayabilir.
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('fetch', (event) => {

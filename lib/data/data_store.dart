@@ -8,16 +8,21 @@ import '../models/app_data.dart';
 import '../models/appointment.dart';
 import '../models/assessment.dart';
 import '../models/client.dart';
+import '../models/document.dart';
 import '../models/form_entry.dart';
 import '../models/note.dart';
 import '../models/pdf_library.dart';
 import '../models/plan.dart';
 import '../models/task.dart';
 import '../models/user_account.dart';
+import '../utils/formats.dart';
 import 'account_store.dart';
+import 'blob_store.dart';
 import 'appointment_sync.dart';
 import 'client_deduplication.dart' as client_dedup;
 import 'mindtrack_backend.dart';
+import 'binary_blobs.dart';
+import 'sync_status.dart';
 
 /// Kullanıcıya özel veri deposu — her değişiklikte kaydeder ve ekranlara haber verir.
 class DataStore extends ChangeNotifier {
@@ -29,6 +34,32 @@ class DataStore extends ChangeNotifier {
   String? _pendingRemoteEncoded;
   Timer? _remoteSaveTimer;
   StreamSubscription<Map<String, dynamic>?>? _remoteSubscription;
+
+  // --- Kalıcı senkronizasyon durumu ---------------------------------------
+  // Uzak yazma başarısız olduğunda veri kaybolmasın diye "kirli" işareti
+  // diske yazılır; uygulama kapansa bile uzak kopyanın eksik kalmadığı
+  // garanti edilir ve bir sonraki açılışta kaldığı yerden sürdürülür.
+  SyncPhase _phase = SyncPhase.idle;
+  int _failures = 0;
+  DateTime? _lastSyncedAt;
+  DateTime? _lastErrorAt;
+  String? _syncMessage;
+  Timer? _retryTimer;
+  bool _disposed = false;
+
+  /// Tekrarlanan denemelerde beklenecek süreler (üstel geri çekilme).
+  /// Son adımda 10 dakikada bir denemeye düşer.
+  static const List<Duration> _backoff = <Duration>[
+    Duration(seconds: 5),
+    Duration(seconds: 15),
+    Duration(seconds: 45),
+    Duration(minutes: 2),
+    Duration(minutes: 5),
+    Duration(minutes: 10),
+  ];
+
+  String _dirtyKey(UserAccount u) => 'mt_dirty_v2_${u.id}';
+  String _syncedAtKey(UserAccount u) => 'mt_synced_at_v2_${u.id}';
 
   DataStore(this.accounts) {
     load();
@@ -54,11 +85,12 @@ class DataStore extends ChangeNotifier {
       return;
     }
     try {
-      final raw = _prefs.getString(accounts.dataKey(u));
+      final raw = BlobStore.instance.get(accounts.dataKey(u));
       if (raw != null && raw.isNotEmpty) {
         data = AppData.fromJson(jsonDecode(raw) as Map<String, dynamic>);
         if (deduplicateClientsByEmail()) {
-          _prefs.setString(accounts.dataKey(u), jsonEncode(data.toJson()));
+          unawaited(BlobStore.instance.set(
+              accounts.dataKey(u), jsonEncode(data.toJson())));
         }
       } else {
         data = AppData.empty();
@@ -66,8 +98,27 @@ class DataStore extends ChangeNotifier {
     } catch (_) {
       data = AppData.empty();
     }
+    _restoreSyncState(u);
     notifyListeners();
     _loadRemote();
+  }
+
+  /// Kullanıcının diskte kalan senkronizasyon durumunu geri yükler.
+  /// Uygulama çevrimdışı açıldığında arayüz doğru uyarıyı gösterebilsin.
+  void _restoreSyncState(UserAccount u) {
+    final stamped = _prefs.getDouble(_syncedAtKey(u));
+    _lastSyncedAt = stamped == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(stamped.round());
+    final dirty = _prefs.getBool(_dirtyKey(u)) ?? false;
+    if (dirty) {
+      _failures = 0;
+      _phase = SyncPhase.pending;
+      _syncMessage = 'Son değişiklikler gönderilecek';
+    } else {
+      _phase = SyncPhase.idle;
+      _syncMessage = null;
+    }
   }
 
   /// Supabase oturumu açıldıktan sonra telefon/web senkronunu başlatır.
@@ -85,6 +136,7 @@ class DataStore extends ChangeNotifier {
       onError: (_) {},
     );
     _remoteLoading = false;
+    _resumePendingSync();
   }
 
   Future<void> _applyRemoteState(
@@ -93,12 +145,26 @@ class DataStore extends ChangeNotifier {
   ) async {
     if (remote == null) return;
     try {
+      // Bu cihazda sunucuya gitmemiş değişiklik varsa gelen durum
+      // koşulsuz üzerine yazılırsa notlar kaybolur. Önce yerel
+      // değişiklikler yazılır; ardından gelen durum bir sonraki
+      // bildirimde kendi haline gelir.
+      // Uzak olay, kendi yazmamızın Realtime yankısı olsa bile yerel kirli
+      // işaret temizlenmeden uygulanmamalı. Aksi halde yazma sürerken gelen
+      // olay son yerel değişikliği tekrar eski uzak kopyayla ezebilir.
+      if (hasUnsyncedChanges) {
+        unawaited(_saveRemote(jsonEncode(data.toJson())));
+        return;
+      }
       final next = AppData.fromJson(remote);
       final removedDuplicates = deduplicateClientsByEmail(next);
+      // Sunucu gövdeyi taşımaz; bu cihazda indirilmiş belgeler
+      // korunur, olmayanlar ilk açıldığında indirilir.
+      carryLocalBinaries(next, data);
       await _hydratePdfs(next);
       final encoded = jsonEncode(next.toJson());
       data = next;
-      await _prefs.setString(accounts.dataKey(localUser), encoded);
+      await BlobStore.instance.set(accounts.dataKey(localUser), encoded);
       notifyListeners();
       if (removedDuplicates) _saveRemote(encoded);
     } catch (_) {
@@ -112,25 +178,41 @@ class DataStore extends ChangeNotifier {
   bool deduplicateClientsByEmail([AppData? target]) =>
       client_dedup.deduplicateClientsByEmail(target ?? data);
 
-  /// Uzak kopyada yalnızca yol saklanan PDF'leri indirip `dataUrl` alanını
-  /// doldurur. Böylece PDF kütüphanesi ekranda her zaman yerel çalışır.
+  /// Uzak kopyada yalnızca yol saklanan PDF ve danışan belgelerini
+  /// indirip `dataUrl` alanını doldurur.
+  ///
+  /// Zaten indirilmiş olanlar atlanır; kütüphane her senkronizasyonda
+  /// baştan indirilmez.
   Future<void> _hydratePdfs(AppData next) async {
     for (final file in next.pdfFiles) {
-      if (file.dataUrl.isNotEmpty || file.storagePath.isEmpty) continue;
+      if (!needsDownload(file.dataUrl, file.storagePath)) continue;
       try {
         final bytes = await MindTrackBackend.instance.downloadPdf(
           file.storagePath,
         );
         file.dataUrl = 'data:${file.type};base64,${base64Encode(bytes)}';
       } catch (_) {
-        // Dosya uzak depoda yoksa kütüphane satırı boş kalır, uygulama çalışır.
+        // Dosya uzak depoda yoksa satır boş kalır, uygulama çalışır.
+      }
+    }
+    for (final doc in next.documents) {
+      if (!needsDownload(doc.dataUrl, doc.storagePath)) continue;
+      try {
+        final bytes = await MindTrackBackend.instance.downloadPdf(
+          doc.storagePath,
+        );
+        doc.dataUrl = 'data:${doc.type};base64,${base64Encode(bytes)}';
+      } catch (_) {
+        // Belge uzak depoda yoksa açılınca tekrar denenir.
       }
     }
   }
 
   @override
   void dispose() {
+    _disposed = true;
     _remoteSaveTimer?.cancel();
+    _retryTimer?.cancel();
     _remoteSubscription?.cancel();
     super.dispose();
   }
@@ -140,7 +222,9 @@ class DataStore extends ChangeNotifier {
     if (u == null) return;
     deduplicateClientsByEmail();
     final encoded = jsonEncode(data.toJson());
-    _prefs.setString(accounts.dataKey(u), encoded);
+    unawaited(BlobStore.instance.set(accounts.dataKey(u), encoded));
+    _markDirty(u);
+    if (_phase == SyncPhase.idle) _phase = SyncPhase.pending;
     notifyListeners();
     // Release web/mobil sürümünde bir ekranda art arda yapılan küçük
     // değişiklikleri tek uzak yazmada birleştir. Yerel kayıt anında tamamlanır;
@@ -179,22 +263,34 @@ class DataStore extends ChangeNotifier {
     // Arka arkaya gelen işlemlerden hiçbiri kaybolmasın: yeni kayıt, devam eden
     // uzak yazmanın arkasında kuyruğa alınır ve son durum ayrıca yazılır.
     _pendingRemoteEncoded = encoded;
+    final u = accounts.current;
+    if (u != null) _markDirty(u);
     if (_remoteSaving) return;
+
     _remoteSaving = true;
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    _setPhase(SyncPhase.syncing);
     try {
       while (_pendingRemoteEncoded != null) {
         final payload = _pendingRemoteEncoded!;
         _pendingRemoteEncoded = null;
         final backend = MindTrackBackend.instance;
-        if (!backend.isSignedIn) break;
+        if (!backend.isSignedIn) {
+          // Oturum yoksa veri kirli kalır; giriş olunca sürdürülür.
+          _setPhase(SyncPhase.pending, message: 'Oturum bekleniyor');
+          break;
+        }
         try {
           // Base64 PDF'ler önce Storage'a çıkarılır; jsonb gövdesi hafif kalır.
           // Aksi halde ücretsiz plandaki 500 MB'lık veritabanı birkaç dosyada
           // dolar ve (eski sürümdeki gibi) senkron tümüyle durur.
           final slim = await _slimForRemote(payload);
           await backend.saveState(slim);
-        } catch (_) {
-          // Yerel kayıt korunur; sonraki kullanıcı işleminde yeniden denenir.
+          _onRemoteSaved();
+        } catch (error) {
+          _onRemoteFailed(error);
+          break;
         }
       }
     } finally {
@@ -202,45 +298,241 @@ class DataStore extends ChangeNotifier {
     }
   }
 
-  /// PDF ikili içeriklerini Storage'a yükleyip gövdeden çıkarır.
-  ///
-  /// `data` nesnesine dokunmaz; yalnızca gönderilecek kopya hafifletilir,
-  /// böylece cihazdaki yerel kopyalar bozulmaz.
-  Future<Map<String, dynamic>> _slimForRemote(String encoded) async {
-    final decoded = jsonDecode(encoded) as Map<String, dynamic>;
-    final files = decoded['pdfFiles'];
-    if (files is! List || files.isEmpty) return decoded;
-    for (final raw in files) {
-      if (raw is! Map) continue;
-      final dataUrl = raw['dataUrl']?.toString() ?? '';
-      if (dataUrl.isEmpty) continue;
-      if ((raw['storagePath']?.toString() ?? '').isNotEmpty) {
-        raw['dataUrl'] = '';
-        continue;
-      }
-      final bytes = _decodeDataUrl(dataUrl);
-      if (bytes == null) continue;
-      try {
-        final path = await MindTrackBackend.instance.uploadPdf(
-          raw['id'].toString(),
-          bytes,
-        );
-        raw['storagePath'] = path;
-        raw['dataUrl'] = '';
-      } catch (_) {
-        // Yükleme başarısız olursa bu dosya için gövde olduğu gibi kalır.
-      }
+  // ---------------- kalıcı senkronizasyon durumu ----------------
+
+  /// Başarılı yazma sonrası: sıradaki iş kalmadıysa durum temizlenir.
+  void _onRemoteSaved() {
+    _failures = 0;
+    _lastSyncedAt = DateTime.now();
+    _lastErrorAt = null;
+    _syncMessage = null;
+    final u = accounts.current;
+    if (u != null) {
+      _prefs.setBool(_dirtyKey(u), false);
+      _prefs.setDouble(_syncedAtKey(u),
+          _lastSyncedAt!.millisecondsSinceEpoch.toDouble());
     }
-    return decoded;
+    _setPhase(
+      _pendingRemoteEncoded != null ? SyncPhase.pending : SyncPhase.idle,
+    );
   }
 
-  Uint8List? _decodeDataUrl(String dataUrl) {
-    final comma = dataUrl.indexOf(',');
-    if (comma < 0) return null;
+  /// Başarısız yazma: veri kaybolmaz, üstel geri çekilmeyle yeniden denenir.
+  void _onRemoteFailed(Object error) {
+    _failures++;
+    _lastErrorAt = DateTime.now();
+    _setPhase(SyncPhase.error, message: _describeSyncError(error));
+    _scheduleRetry();
+  }
+
+  void _scheduleRetry() {
+    if (_disposed) return;
+    _retryTimer?.cancel();
+    _retryTimer = Timer(_backoffFor(_failures), _retryNow);
+  }
+
+  Duration _backoffFor(int failures) {
+    if (failures <= 0) return _backoff.first;
+    if (failures > _backoff.length) return _backoff.last;
+    return _backoff[failures - 1];
+  }
+
+  /// Yeniden denemede veri yerel kaynaktan yeniden üretilir; bellekteki
+  /// kopyadan değil. Böylece uygulama kapansa da veri kaybolmaz.
+  Future<void> _retryNow() async {
+    _retryTimer = null;
+    if (_disposed || accounts.current == null) return;
+    if (!MindTrackBackend.instance.isSignedIn) {
+      _setPhase(SyncPhase.pending, message: 'Oturum bekleniyor');
+      return;
+    }
+    await _saveRemote(jsonEncode(data.toJson()));
+  }
+
+  /// Yerel veride sunucuya gitmemiş değişiklik olduğunu diske yazar.
+  void _markDirty(UserAccount u) =>
+      _prefs.setBool(_dirtyKey(u), true);
+
+  /// Önceki oturumdan yarım kalmış yazmayı sürdürür.
+  void _resumePendingSync() {
+    final u = accounts.current;
+    if (u == null || _disposed) return;
+    if (!(_prefs.getBool(_dirtyKey(u)) ?? false)) return;
+    if (!MindTrackBackend.instance.isSignedIn) return;
+    _saveRemote(jsonEncode(data.toJson()));
+  }
+
+  /// Sunucuya yazılmamış yerel değişiklik var mı?
+  bool get hasUnsyncedChanges {
+    final u = accounts.current;
+    if (u == null) return false;
+    return _prefs.getBool(_dirtyKey(u)) ?? false;
+  }
+
+  /// Senkronizasyonun anlık durumu — arayüz bunu dinleyip kullanıcıya gösterir.
+  SyncStatus get syncStatus => SyncStatus(
+        phase: _phase,
+        failures: _failures,
+        lastSyncedAt: _lastSyncedAt,
+        lastErrorAt: _lastErrorAt,
+        message: _syncMessage,
+      );
+
+  /// Kullanıcı "Şimdi dene" dediğinde elle tetikler.
+  Future<void> retrySyncNow() async {
+    if (accounts.current == null) return;
+    if (!MindTrackBackend.instance.isSignedIn) {
+      _setPhase(SyncPhase.offline, message: 'Sunucuya ulaşılamıyor');
+      return;
+    }
+    _failures = 0;
+    await _saveRemote(jsonEncode(data.toJson()));
+  }
+
+  void _setPhase(SyncPhase phase, {String? message}) {
+    if (_disposed) return;
+    final unchanged = _phase == phase && _syncMessage == message;
+    _phase = phase;
+    _syncMessage = message;
+    if (!unchanged) notifyListeners();
+  }
+
+  static String _describeSyncError(Object error) {
+    if (error is BackendException) return error.message;
+    final text = error.toString();
+    return text.length > 120 ? '${text.substring(0, 117)}…' : text;
+  }
+
+  /// Belge ikililerini Storage'a yükleyip gövdeden çıkarır.
+  ///
+  /// `data` nesnesine dokunmaz; yalnızca gönderilecek kopya hafifletilir,
+  /// böylece cihazdaki yerel önbellekler bozulmaz.
+  ///
+  /// Yükleme sırası **gövde yerinde kalır**; yol yalnızca başarılı olduktan
+  /// sonra yazılır. Yükleme başarısız olursa gövde gönderilir, böylece
+  /// sunucuya hiç ulaşamayan belge kaybolmaz.
+  Future<Map<String, dynamic>> _slimForRemote(String encoded) async {
+    final slim = jsonDecode(encoded) as Map<String, dynamic>;
+    // Sunucuda zaten var olanlar tekrar yüklenmez.
+    dropUploadedBodies(slim);
+    for (final file in extractInlineBinaries(slim)) {
+      try {
+        final path = await MindTrackBackend.instance.uploadPdf(
+          file.id,
+          file.bytes,
+        );
+        applyStoragePath(slim, file.collection, file.id, path);
+        // Yerel kayıtta da yol tutulur; aksi halde her senkronizasyonda aynı
+        // dosya yeniden yüklenir.
+        _rememberStoragePath(file.collection, file.id, path);
+      } catch (_) {
+        // Yükleme başarısız: gövde gönderilecek kopyada kalır.
+      }
+    }
+    return slim;
+  }
+
+  /// Yüklenen belgenin (kütüphane PDF'i veya danışan dokümanı) uzak yolunu
+  /// yerel kayda yazar.
+  ///
+  /// Böylece her senkronizasyonda aynı dosya yeniden yüklenmez; yereldeki
+  /// `dataUrl` önbelleği korunur, belge ekranda açılırken yerel kopyası durur.
+  void _rememberStoragePath(String collection, String id, String path) {
+    if (!stampStoragePath(data, collection, id, path)) return;
+    _persistLocal();
+  }
+
+  /// Mevcut kaydı diske yazar (kirli işareti bu yol değiştirir).
+  void _persistLocal() {
+    final user = accounts.current;
+    if (user == null) return;
+    unawaited(BlobStore.instance.set(
+        accounts.dataKey(user), jsonEncode(data.toJson())));
+  }
+
+  // ---------------- tembel belge indirme ----------------
+
+  /// Aynı belgenin eşzamanlı indirilmesini tek isteğe indirger.
+  final Map<String, Future<Uint8List>> _inflightDownloads =
+      <String, Future<Uint8List>>{};
+
+  Future<Uint8List> _downloadBinary(
+    String storagePath,
+    String type,
+    void Function(String dataUrl) cache,
+  ) {
+    final running = _inflightDownloads[storagePath];
+    if (running != null) return running;
+    final future = _performDownload(storagePath, type, cache);
+    _inflightDownloads[storagePath] = future;
+    return future;
+  }
+
+  Future<Uint8List> _performDownload(
+    String storagePath,
+    String type,
+    void Function(String dataUrl) cache,
+  ) async {
     try {
-      return base64Decode(dataUrl.substring(comma + 1));
+      final bytes = await MindTrackBackend.instance.downloadPdf(storagePath);
+      cache('data:$type;base64,${base64Encode(bytes)}');
+      _persistLocal();
+      notifyListeners();
+      return bytes;
     } catch (_) {
-      return null;
+      // Çevrimdışı veya silinmiş dosya: boş döner, arayüz uyarı gösterir.
+      return Uint8List(0);
+    } finally {
+      _inflightDownloads.remove(storagePath);
+    }
+  }
+
+  /// Kütüphane PDF'inin baytlarını döndürür.
+  ///
+  /// Bu cihazda önbelleği varsa indirilmez; yoksa sunucudan çekilip
+  /// önbelleğe alınır. Başarısız olursa boş liste döner.
+  Future<Uint8List> pdfBytes(PdfFile file) {
+    final cached = bytesFromDataUrl(file.dataUrl);
+    if (cached.isNotEmpty) return Future<Uint8List>.value(cached);
+    if (file.storagePath.isEmpty) return Future<Uint8List>.value(Uint8List(0));
+    return _downloadBinary(file.storagePath, file.type, (value) {
+      file.dataUrl = value;
+    });
+  }
+
+  /// Danışan dokümanının baytlarını döndürür.
+  Future<Uint8List> documentBytes(Document doc) {
+    final cached = bytesFromDataUrl(doc.dataUrl);
+    if (cached.isNotEmpty) return Future<Uint8List>.value(cached);
+    if (doc.storagePath.isEmpty) return Future<Uint8List>.value(Uint8List(0));
+    return _downloadBinary(doc.storagePath, doc.type, (value) {
+      doc.dataUrl = value;
+    });
+  }
+
+  /// Belgenin bu cihazda indirilmiş kopyası var mı?
+  ///
+  /// `false` ise belge yalnızca sunucuda duruyor; çevrimdışı açılamaz ve
+  /// ilk açılışta indirilir.
+  bool pdfIsCached(PdfFile file) => isCached(file.dataUrl);
+
+  /// Danışan dokümanı için aynı kontrol.
+  bool documentIsCached(Document doc) => isCached(doc.dataUrl);
+
+  /// Silinen belgelerin sunucu kopyalarını temizler.
+  ///
+  /// Silme yalnızca kayıttan çıkarmakla kalmaz; depoda kalan ikili kopyalar
+  /// hem aylık depolama maliyeti hem de KVKK açısından sorunludur (silinen
+  /// danışanın belgesi depoda kalırsa "sil" sözü tutmaz). Hata durumunda
+  /// sessizce geçilir: geriye yalnızca boş bir depo nesnesi kalır.
+  Future<void> purgeBlobs(Iterable<String> paths) async {
+    for (final path in paths) {
+      if (path.isEmpty) continue;
+      try {
+        await MindTrackBackend.instance.deletePdf(path);
+      } catch (_) {
+        // Depo temizliği başarısız olursa veri kaybı olmaz.
+      }
     }
   }
 

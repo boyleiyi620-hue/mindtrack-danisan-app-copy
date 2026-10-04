@@ -30,6 +30,7 @@ jobs:
         run: |
           flutter pub get
           node scripts/test_service_worker.mjs
+          node scripts/test_security_headers.mjs
           flutter test
           ./scripts/build_web.sh
 

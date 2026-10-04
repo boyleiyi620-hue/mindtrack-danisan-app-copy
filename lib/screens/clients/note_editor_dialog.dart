@@ -29,6 +29,56 @@ class _NoteEditorDialogState extends State<NoteEditorDialog> {
   DateTime _date = DateTime.now();
   String? _error;
 
+  /// Kullanıcı notu değiştirdiyse pencere kapatılırken uyarılır.
+  /// Kaydedilmemiş bir seans notu, güncelleme veya yanlışlıkla çıkış
+  /// yüzünden kaybolmamalıdır.
+  bool _dirty = false;
+
+  /// PopScope `canPop: false` iken programatik `Navigator.pop` da engellenir.
+  /// Bu bayrak, onaylanmış çıkışların (Kaydet / Vazgeç) gerçekten kapandığını
+  /// garanti eder; aksi halde Kaydet'e basınca uyarı penceresi açılırdı.
+  bool _allowPop = false;
+
+  /// Onaylanmış çıkış: izin bayrağını açıp bir sonraki karede kapatır.
+  void _closeWith(Object? result) {
+    if (!mounted) return;
+    setState(() => _allowPop = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Navigator.of(context).pop(result);
+    });
+  }
+
+  void _markDirty() {
+    if (_dirty) return;
+    setState(() => _dirty = true);
+  }
+
+  /// Kaydedilmemiş değişiklik varken kapanmayı sorar.
+  Future<bool> _confirmDiscard() async {
+    if (!_dirty) return true;
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Kaydedilmemiş değişiklik'),
+        content: const Text(
+          'Bu seans notunda kaydedilmemiş değişiklikler var. Çıkarsanız '
+          'değişiklikler kaybolur.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Yine de çık'),
+          ),
+        ],
+      ),
+    );
+    return leave ?? false;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -100,186 +150,197 @@ class _NoteEditorDialogState extends State<NoteEditorDialog> {
       ));
     }
     widget.data.save();
-    Navigator.of(context).pop(true);
+    _closeWith(true);
   }
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      insetPadding: const EdgeInsets.all(16),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.radius)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 640, maxHeight: 700),
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 18, 12, 10),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.existing != null
-                              ? 'Seans Notunu Düzenle'
-                              : 'Yeni Seans Notu (SOAP)',
-                          style: const TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.text),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'S — Öznel, O — Nesnel, A — Değerlendirme, P — Plan',
-                          style: const TextStyle(
-                              fontSize: 11.5,
-                              color: AppColors.muted),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Kapat',
-                    onPressed: () => Navigator.of(context).pop(false),
-                    icon: const Icon(Icons.close, color: AppColors.muted),
-                  ),
-                ],
-              ),
-            ),
-            const Divider(height: 1),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+    return PopScope(
+      canPop: _allowPop || !_dirty,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        if (await _confirmDiscard()) _closeWith(result);
+      },
+      child: Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.radius)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640, maxHeight: 700),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 18, 12, 10),
+                child: Row(
                   children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _title,
-                            decoration: const InputDecoration(
-                              labelText: 'Not Başlığı *',
-                              hintText: 'Örn: Seans 1',
-                            ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.existing != null
+                                ? 'Seans Notunu Düzenle'
+                                : 'Yeni Seans Notu (SOAP)',
+                            style: const TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.text),
                           ),
-                        ),
-                        const SizedBox(width: 10),
-                        SizedBox(
-                          width: 150,
-                          child: InkWell(
-                            onTap: _pickDate,
-                            borderRadius: BorderRadius.circular(10),
-                            child: InputDecorator(
-                              decoration: const InputDecoration(
-                                labelText: 'Tarih',
-                                suffixIcon:
-                                    Icon(Icons.calendar_today, size: 16),
-                              ),
-                              child: Text(
-                                fmtDate(_date),
-                                style: const TextStyle(
-                                    fontSize: 13.5,
-                                    color: AppColors.text),
-                              ),
-                            ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'S — Öznel, O — Nesnel, A — Değerlendirme, P — Plan',
+                            style: const TextStyle(
+                                fontSize: 11.5,
+                                color: AppColors.muted),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Ruh Hali',
-                            style: TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.text2)),
-                        const SizedBox(height: 6),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            for (final m in _moods)
-                              ChoiceChip(
-                                label: Text(m,
-                                    style: const TextStyle(
-                                        fontSize: 12.5)),
-                                selected: _mood == m,
-                                onSelected: (_) => setState(() => _mood = m),
-                              ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    _soapField('S — Öznel (Subjective)', _subjective,
-                        'Danışanın anlattıkları, belirtiler...'),
-                    const SizedBox(height: 12),
-                    _soapField('O — Nesnel (Objective)', _objective,
-                        'Gözlemleriniz, ölçülebilir bulgular...'),
-                    const SizedBox(height: 12),
-                    _soapField('A — Değerlendirme (Assessment)', _assessment,
-                        'Klinik değerlendirme, ilerleme...'),
-                    const SizedBox(height: 12),
-                    _soapField('P — Plan (Plan)', _plan,
-                        'Sonraki adımlar, ev ödevleri, yönlendirmeler...'),
-                    if (_error != null) ...[
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppColors.dangerSoft,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.error_outline,
-                                size: 18, color: AppColors.danger),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                _error!,
-                                style: const TextStyle(
-                                    fontSize: 13,
-                                    color: AppColors.danger),
-                              ),
-                            ),
-                          ],
-                        ),
+                        ],
                       ),
-                    ],
+                    ),
+                    IconButton(
+                      tooltip: 'Kapat',
+                      onPressed: () async {
+                        if (await _confirmDiscard()) _closeWith(false);
+                      },
+                      icon: const Icon(Icons.close, color: AppColors.muted),
+                    ),
                   ],
                 ),
               ),
-            ),
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(false),
-                    child: const Text('İptal',
-                        style: TextStyle()),
+              const Divider(height: 1),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _title,
+                              decoration: const InputDecoration(
+                                labelText: 'Not Başlığı *',
+                                hintText: 'Örn: Seans 1',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          SizedBox(
+                            width: 150,
+                            child: InkWell(
+                              onTap: _pickDate,
+                              borderRadius: BorderRadius.circular(10),
+                              child: InputDecorator(
+                                decoration: const InputDecoration(
+                                  labelText: 'Tarih',
+                                  suffixIcon:
+                                      Icon(Icons.calendar_today, size: 16),
+                                ),
+                                child: Text(
+                                  fmtDate(_date),
+                                  style: const TextStyle(
+                                      fontSize: 13.5,
+                                      color: AppColors.text),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Ruh Hali',
+                              style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.text2)),
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              for (final m in _moods)
+                                ChoiceChip(
+                                  label: Text(m,
+                                      style: const TextStyle(
+                                          fontSize: 12.5)),
+                                  selected: _mood == m,
+                                  onSelected: (_) => setState(() => _mood = m),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      _soapField('S — Öznel (Subjective)', _subjective,
+                          'Danışanın anlattıkları, belirtiler...'),
+                      const SizedBox(height: 12),
+                      _soapField('O — Nesnel (Objective)', _objective,
+                          'Gözlemleriniz, ölçülebilir bulgular...'),
+                      const SizedBox(height: 12),
+                      _soapField('A — Değerlendirme (Assessment)', _assessment,
+                          'Klinik değerlendirme, ilerleme...'),
+                      const SizedBox(height: 12),
+                      _soapField('P — Plan (Plan)', _plan,
+                          'Sonraki adımlar, ev ödevleri, yönlendirmeler...'),
+                      if (_error != null) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppColors.dangerSoft,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.error_outline,
+                                  size: 18, color: AppColors.danger),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _error!,
+                                  style: const TextStyle(
+                                      fontSize: 13,
+                                      color: AppColors.danger),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  FilledButton.icon(
-                    onPressed: _save,
-                    icon: const Icon(Icons.save_outlined, size: 16),
-                    label: const Text('Kaydet',
-                        style: TextStyle()),
-                  ),
-                ],
+                ),
               ),
-            ),
-          ],
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () async {
+                        if (await _confirmDiscard()) _closeWith(false);
+                      },
+                      child: const Text('İptal',
+                          style: TextStyle()),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton.icon(
+                      onPressed: _save,
+                      icon: const Icon(Icons.save_outlined, size: 16),
+                      label: const Text('Kaydet',
+                          style: TextStyle()),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
+      );
     );
   }
 
@@ -296,6 +357,7 @@ class _NoteEditorDialogState extends State<NoteEditorDialog> {
         TextField(
           controller: c,
           maxLines: 3,
+          onChanged: (_) => _markDirty(),
           decoration: InputDecoration(hintText: hint),
         ),
       ],

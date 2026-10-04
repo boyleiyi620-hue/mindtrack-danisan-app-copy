@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/user_account.dart';
+import 'blob_store.dart';
 
 /// Yerel hesap deposu — web'de localStorage, mobilde kalıcı depolama.
 class AccountStore {
@@ -19,8 +20,16 @@ class AccountStore {
     _load();
   }
 
-  static Future<AccountStore> init() async =>
-      AccountStore(await SharedPreferences.getInstance());
+  /// Hesap deposunu hazırlar.
+  ///
+  /// Büyük klinik kaydının tutulduğu [BlobStore] da burada başlatılır; veri
+  /// deposu `DataStore` kurulmadan **önce** hazır olmalıdır. Aksi halde ilk
+  /// okuma boş döner ve mevcut kayıt üzerine yazılabilir.
+  static Future<AccountStore> init() async {
+    final prefs = await SharedPreferences.getInstance();
+    await BlobStore.instance.init();
+    return AccountStore(prefs);
+  }
 
   void _load() {
     final raw = prefs.getString(usersKey);

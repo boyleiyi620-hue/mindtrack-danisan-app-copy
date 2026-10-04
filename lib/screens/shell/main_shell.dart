@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../data/account_store.dart';
 import '../../data/data_store.dart';
 import '../../data/mindtrack_backend.dart';
+import '../../data/sync_status.dart';
 import '../../models/user_account.dart';
 import '../../theme/app_theme.dart';
 import '../auth/pin_screen.dart';
@@ -278,6 +279,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
         ],
       ),
       actions: [
+        _syncBadge(context),
         if (!wide)
           IconButton(
             tooltip: 'Uygulama Kilidi',
@@ -338,6 +340,120 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
         ),
       ],
     );
+  }
+
+  /// Senkronizasyon rozeti: verinin sunucuda olup olmadığını her an gösterir.
+  ///
+  /// Sessizce başarısız olan bir yazma artık fark edilemez değildir; hata
+  /// durumunda rozet kırmızıya döner ve kullanıcı "Şimdi dene" ile yeniden
+  /// deneyebilir.
+  Widget _syncBadge(BuildContext context) {
+    return AnimatedBuilder(
+      animation: widget.data,
+      builder: (context, _) {
+        final status = widget.data.syncStatus;
+        final (IconData icon, Color color, String tooltip) =
+            _syncAppearance(status);
+        return IconButton(
+          key: const Key('sync-badge'),
+          tooltip: tooltip,
+          onPressed: () => _showSyncSheet(context, status),
+          icon: Icon(icon, color: color, size: 20),
+        );
+      },
+    );
+  }
+
+  (IconData, Color, String) _syncAppearance(SyncStatus status) {
+    switch (status.phase) {
+      case SyncPhase.idle:
+        return (
+          Icons.cloud_done_outlined,
+          AppColors.muted,
+          'Tüm veriler sunucuda'
+        );
+      case SyncPhase.syncing:
+        return (Icons.cloud_sync_outlined, AppColors.primary, 'Kaydediliyor');
+      case SyncPhase.pending:
+        return (Icons.cloud_queue_outlined, AppColors.warning, 'Bekleyen kayıt');
+      case SyncPhase.offline:
+        return (Icons.cloud_off_outlined, AppColors.muted, 'Çevrimdışı');
+      case SyncPhase.error:
+        return (Icons.cloud_off_outlined, AppColors.danger, 'Sunucuya kaydedilemedi');
+    }
+  }
+
+  /// Durum ayrıntısı ve elle yeniden deneme.
+  Future<void> _showSyncSheet(
+    BuildContext context,
+    SyncStatus status,
+  ) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Veri durumu',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.text,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                _syncMessage(status),
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  color: AppColors.text2,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      key: const Key('sync-retry'),
+                      onPressed: () async {
+                        Navigator.of(sheetContext).pop();
+                        await widget.data.retrySyncNow();
+                      },
+                      child: const Text('Şimdi dene'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _syncMessage(SyncStatus status) {
+    switch (status.phase) {
+      case SyncPhase.idle:
+        return 'Tüm değişiklikleriniz sunucuda güvenle saklanıyor.';
+      case SyncPhase.syncing:
+        return 'Değişiklikleriniz sunucuya gönderiliyor.';
+      case SyncPhase.pending:
+        return 'Değişiklikleriniz bu cihazda güvende. Sunucuya gönderilmek için '
+            'bekliyor.';
+      case SyncPhase.offline:
+        return 'Sunucuya ulaşılamıyor. Verileriniz yalnızca bu cihazda duruyor; '
+            'bağlantı gelince kendiliğinden gönderilecek.';
+      case SyncPhase.error:
+        final detail = status.message;
+        final base = 'Son değişiklikler sunucuya kaydedilemedi. Verileriniz bu '
+            'cihazda güvende ve arka planda tekrar denenecek.';
+        return detail == null ? base : '$base\n\n$detail';
+    }
   }
 
   List<_NavItem> get _currentNavItems {

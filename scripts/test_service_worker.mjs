@@ -53,13 +53,29 @@ const context = {
 };
 vm.runInNewContext(source, context);
 
+// Kaydedilmemiş veri varken sekmeler yenilenmemeli: aktivasyon yalnızca
+// eski önbelleği temizler ve kontrolü devralır, hiçbir sekmeye dokunmaz.
+handlers.get('install')?.();
 let activation;
 handlers.get('activate')({ waitUntil: (promise) => (activation = promise) });
 await activation;
-assert.equal(navigationCount, 0, 'activation must not reload active app tabs');
-assert.equal(skipWaitingCount, 0, 'new worker must wait for user approval');
+assert.equal(
+  navigationCount,
+  0,
+  'activation must never reload app tabs (unsaved session notes would be lost)',
+);
+assert.equal(skipWaitingCount, 0, 'install must not skip waiting');
+
 handlers.get('message')({ data: { type: 'SKIP_WAITING' } });
-assert.equal(skipWaitingCount, 1, 'approved update message may activate worker');
+assert.equal(skipWaitingCount, 1, 'app must be able to apply the update on demand');
+
+let ignoredMessageCount = skipWaitingCount;
+handlers.get('message')({ data: { type: 'BASKA_BIR_MESAJ' } });
+assert.equal(
+  skipWaitingCount,
+  ignoredMessageCount,
+  'unknown messages must not activate a pending update',
+);
 
 let networkResponse;
 handlers.get('fetch')({
