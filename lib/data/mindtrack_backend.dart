@@ -93,6 +93,29 @@ class MindTrackBackend {
     });
   }
 
+  /// E-posta adresine tek kullanımlık giriş kodu gönderir.
+  Future<void> sendEmailLoginCode(String email) async {
+    await _guard(() async {
+      await _db.auth.signInWithOtp(
+        email: email.trim().toLowerCase(),
+      );
+    });
+  }
+
+  /// Gmail'e gelen tek kullanımlık kodla oturum açar.
+  Future<void> verifyEmailLoginCode({
+    required String email,
+    required String code,
+  }) async {
+    await _guard(() async {
+      await _db.auth.verifyOTP(
+        email: email.trim().toLowerCase(),
+        token: code.trim(),
+        type: OtpType.email,
+      );
+    });
+  }
+
   Future<void> signOut() async {
     await _guard(() async => _db.auth.signOut());
   }

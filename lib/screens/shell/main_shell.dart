@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/account_store.dart';
 import '../../data/data_store.dart';
+import '../../data/mindtrack_backend.dart';
 import '../../models/user_account.dart';
 import '../../theme/app_theme.dart';
 import '../auth/pin_screen.dart';
@@ -184,9 +185,18 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   }
 
   Future<void> _logout() async {
-    widget.store.clearSession();
-    widget.data.load();
-    Navigator.of(context).pushNamedAndRemoveUntil('/auth', (r) => false);
+    try {
+      await MindTrackBackend.instance.signOut();
+    } catch (_) {
+      // Yerel oturumu yine de kapat; ağ sorunu çıkış ekranında kalmayı
+      // engellememeli.
+    } finally {
+      widget.store.clearSession();
+      widget.data.load();
+      if (mounted) {
+        Navigator.of(context).pushNamedAndRemoveUntil('/auth', (r) => false);
+      }
+    }
   }
 
   void _onLockPressed() {

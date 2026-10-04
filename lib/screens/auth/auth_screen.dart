@@ -33,6 +33,7 @@ class _AuthScreenState extends State<AuthScreen> {
   final _clinic = TextEditingController();
   final _pass = TextEditingController();
   final _pass2 = TextEditingController();
+  final _emailCode = TextEditingController();
   bool _kvkkOk = false;
 
   @override
@@ -48,6 +49,7 @@ class _AuthScreenState extends State<AuthScreen> {
     _clinic.dispose();
     _pass.dispose();
     _pass2.dispose();
+    _emailCode.dispose();
     super.dispose();
   }
 
@@ -118,6 +120,10 @@ class _AuthScreenState extends State<AuthScreen> {
     // Ortak hesap doğrulaması Supabase Auth üzerinden yapılır. Böylece Web’de
     // oluşturulan hesap, ilk Android girişinde yerel kayıt bulunmasa bile açılır.
     await _signInBackend(email, pass);
+    await _completeRemoteLogin(email, password: pass);
+  }
+
+  Future<void> _completeRemoteLogin(String email, {String? password}) async {
     var u = widget.store.findByEmail(email);
     if (u == null) {
       final backend = MindTrackBackend.instance;
@@ -129,7 +135,7 @@ class _AuthScreenState extends State<AuthScreen> {
         email: email,
         clinic: '',
         salt: salt,
-        pwdHash: hashPassword(pass, salt),
+        pwdHash: hashPassword(password ?? randomHex(), salt),
         createdAt: DateTime.now().millisecondsSinceEpoch.toDouble(),
       );
       widget.store.addUser(u);
@@ -138,6 +144,64 @@ class _AuthScreenState extends State<AuthScreen> {
     widget.data.load();
     await widget.data.startRemoteSync();
     if (mounted) _goHome();
+  }
+
+  Future<void> _emailCodeLogin() async {
+    final email = _email.text.trim().toLowerCase();
+    if (!isEmailValid(email)) {
+      setState(() => _error = 'Önce geçerli bir e-posta adresi girin.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await MindTrackBackend.instance.sendEmailLoginCode(email);
+      if (!mounted) return;
+      _emailCode.clear();
+      final code = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Gmail kodunu girin'),
+          content: TextField(
+            controller: _emailCode,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            maxLength: 6,
+            decoration: const InputDecoration(
+              labelText: 'Tek kullanımlık kod',
+              hintText: '6 haneli kod',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Vazgeç'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final value = _emailCode.text.trim();
+                if (value.length == 6) Navigator.pop(dialogContext, value);
+              },
+              child: const Text('Giriş Yap'),
+            ),
+          ],
+        ),
+      );
+      if (code == null || code.length != 6) return;
+      await MindTrackBackend.instance.verifyEmailLoginCode(
+        email: email,
+        code: code,
+      );
+      await _completeRemoteLogin(email);
+    } on BackendException catch (error) {
+      if (mounted) setState(() => _error = 'Kod ile giriş yapılamadı: ${error.message}');
+    } catch (error) {
+      if (mounted) setState(() => _error = 'Kod ile giriş yapılamadı: $error');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _signInBackend(String email, String pass) async {
@@ -395,6 +459,14 @@ class _AuthScreenState extends State<AuthScreen> {
             icon: const Icon(Icons.account_circle_outlined),
             label: const Text('Google ile devam et'),
           ),
+          if (_mode == AuthMode.login) ...[
+            const SizedBox(height: 4),
+            TextButton.icon(
+              onPressed: _busy ? null : _emailCodeLogin,
+              icon: const Icon(Icons.mark_email_read_outlined, size: 18),
+              label: const Text('Gmail kodu ile giriş yap'),
+            ),
+          ],
         ],
       ),
     );

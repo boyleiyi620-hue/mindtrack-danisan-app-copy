@@ -80,6 +80,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _email = TextEditingController();
   final _pass = TextEditingController();
   final _name = TextEditingController();
+  final _emailCode = TextEditingController();
   bool _isReg = false;
   bool _loading = false;
 
@@ -88,6 +89,7 @@ class _LoginScreenState extends State<LoginScreen> {
     _email.dispose();
     _pass.dispose();
     _name.dispose();
+    _emailCode.dispose();
     super.dispose();
   }
 
@@ -143,6 +145,62 @@ class _LoginScreenState extends State<LoginScreen> {
       _showError('Google girişi başlatılamadı: ${e.message}');
     } catch (e) {
       _showError('Google girişi başlatılamadı: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _emailCodeLogin() async {
+    final email = _email.text.trim().toLowerCase();
+    if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]{2,}$').hasMatch(email)) {
+      _showError('Önce geçerli bir e-posta adresi girin.');
+      return;
+    }
+    setState(() => _loading = true);
+    try {
+      final backend = MindTrackBackend.instance;
+      await backend.sendEmailLoginCode(email);
+      if (!mounted) return;
+      _emailCode.clear();
+      final code = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Gmail kodunu girin'),
+          content: TextField(
+            controller: _emailCode,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            maxLength: 6,
+            decoration: const InputDecoration(
+              labelText: 'Tek kullanımlık kod',
+              hintText: '6 haneli kod',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Vazgeç'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final value = _emailCode.text.trim();
+                if (value.length == 6) Navigator.pop(dialogContext, value);
+              },
+              child: const Text('Giriş Yap'),
+            ),
+          ],
+        ),
+      );
+      if (code == null || code.length != 6) return;
+      await backend.verifyEmailLoginCode(email: email, code: code);
+      await backend.upsertPatientProfile(
+        displayName: backend.displayName,
+        email: backend.userEmail ?? email,
+      );
+    } on BackendException catch (e) {
+      _showError('Kod ile giriş yapılamadı: ${e.message}');
+    } catch (e) {
+      _showError('Kod ile giriş yapılamadı: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -217,8 +275,13 @@ class _LoginScreenState extends State<LoginScreen> {
                   icon: const Icon(Icons.account_circle_outlined),
                   label: const Text('Google ile devam et'),
                   style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 50),
-                  ),
+                  minimumSize: const Size(double.infinity, 50),
+                ),
+                TextButton.icon(
+                  onPressed: _loading || _isReg ? null : _emailCodeLogin,
+                  icon: const Icon(Icons.mark_email_read_outlined, size: 18),
+                  label: const Text('Gmail kodu ile giriş yap'),
+                ),
                 ),
                 TextButton(
                   onPressed: () => setState(() => _isReg = !_isReg),
@@ -1220,6 +1283,14 @@ class _ClientProfileState extends State<ClientProfile> {
     }
   }
 
+  Future<void> _logout() async {
+    try {
+      await MindTrackBackend.instance.signOut();
+    } catch (_) {
+      // Ağ kesilse bile yerel ekran oturum açık bırakılmamalı.
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1259,7 +1330,7 @@ class _ClientProfileState extends State<ClientProfile> {
           ),
           const SizedBox(height: 30),
           OutlinedButton.icon(
-            onPressed: () => MindTrackBackend.instance.signOut(),
+            onPressed: _logout,
             icon: const Icon(Icons.logout),
             label: const Text('Çıkış Yap'),
           ),
