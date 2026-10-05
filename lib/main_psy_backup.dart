@@ -12,15 +12,19 @@ import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  var backendReady = false;
-  try {
-    await MindTrackBackend.init();
-    backendReady = true;
-  } catch (_) {
-    // Supabase başlatılamazsa Web/Android uygulaması yine açılabilmelidir.
-    // Senkronizasyon, arka uç hazır olmadığında giriş ekranında devre dışı kalır.
-  }
-  final store = await AccountStore.init();
+  final backendInitialization = () async {
+    try {
+      await MindTrackBackend.init();
+      return true;
+    } catch (_) {
+      // Supabase kapalı olsa bile yerel giriş ekranı açılabilmelidir.
+      return false;
+    }
+  }();
+  // Backend ve yerel hesap/veri deposu birbirinden bağımsız hazırlanabilir.
+  final storeInitialization = AccountStore.init();
+  final store = await storeInitialization;
+  final backendReady = await backendInitialization;
   final data = DataStore(store);
   runApp(MindTrackApp(
     store: store,
