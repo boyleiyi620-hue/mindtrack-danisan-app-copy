@@ -7,14 +7,15 @@ const bootstrap = await readFile(
   'utf8',
 );
 assert.match(bootstrap, /_flutter\.loader\.load\(\{\s*config:/);
-assert.doesNotMatch(bootstrap, /onEntrypointLoaded/);
+assert.match(bootstrap, /onEntrypointLoaded/);
+assert.match(bootstrap, /await appRunner\.runApp\(\)/);
+assert.match(bootstrap, /bootSplash\?\.remove\(\)/);
 assert.match(bootstrap, /canvasKitBaseUrl:\s*'canvaskit\/'/);
 assert.match(bootstrap, /mindtrack-boot/);
 assert.match(bootstrap, /mindtrack-boot-detail/);
 assert.match(bootstrap, /MindTrack startup error/);
 assert.match(bootstrap, /reason\?\.stack/);
-assert.match(bootstrap, /findVisibleCanvas\(document\)/);
-assert.match(bootstrap, /canvas\.width > 0 && canvas\.height > 0/);
+assert.doesNotMatch(bootstrap, /findVisibleCanvas|firstCanvasTimer/);
 assert.match(bootstrap, /Uygulama başlatılamadı/);
 assert.doesNotMatch(bootstrap, /https:\/\/www\.gstatic\.com\/flutter-canvaskit/);
 assert.match(bootstrap, /canvasKitForceCpuOnly:\s*isTouchAndroid/);
