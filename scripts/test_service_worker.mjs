@@ -18,8 +18,10 @@ assert.match(bootstrap, /reason\?\.stack/);
 assert.doesNotMatch(bootstrap, /findVisibleCanvas|firstCanvasTimer/);
 assert.match(bootstrap, /Uygulama başlatılamadı/);
 assert.doesNotMatch(bootstrap, /https:\/\/www\.gstatic\.com\/flutter-canvaskit/);
-assert.match(bootstrap, /canvasKitForceCpuOnly:\s*isTouchAndroid/);
-assert.match(bootstrap, /Android/);
+// WebGL acceleration remains enabled on touch devices; forcing CanvasKit onto
+// the CPU made Android PWAs noticeably sluggish.
+assert.doesNotMatch(bootstrap, /canvasKitForceCpuOnly/);
+assert.doesNotMatch(bootstrap, /isTouchAndroid/);
 assert.match(bootstrap, /90000/);
 
 for (const page of ['index.html', 'index_client.html', 'index_psychologist.html']) {
