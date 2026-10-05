@@ -714,12 +714,12 @@ class _DataAwareTab extends StatefulWidget {
 }
 
 class _DataAwareTabState extends State<_DataAwareTab> {
-  late Widget _child;
+  Widget? _child;
 
   @override
   void initState() {
     super.initState();
-    _child = widget.builder();
+    if (widget.active) _child = widget.builder();
     if (widget.active) widget.data.addListener(_onDataChanged);
   }
 
@@ -732,7 +732,7 @@ class _DataAwareTabState extends State<_DataAwareTab> {
     } else if (oldWidget.active != widget.active) {
       if (widget.active) {
         widget.data.addListener(_onDataChanged);
-        _child = widget.builder();
+        _child ??= widget.builder();
       } else {
         widget.data.removeListener(_onDataChanged);
       }
@@ -742,6 +742,12 @@ class _DataAwareTabState extends State<_DataAwareTab> {
   void _onDataChanged() {
     if (!mounted || !widget.active) return;
     setState(() => _child = widget.builder());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_child == null && widget.active) _child = widget.builder();
+    return _child ?? const SizedBox.shrink();
   }
 
   @override

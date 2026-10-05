@@ -7,12 +7,70 @@ import 'data/mindtrack_backend.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  runApp(_ClientBootstrapApp(initialization: _initializeClient()));
+}
+
+Future<void> _initializeClient() async {
   try {
     await MindTrackBackend.init();
   } catch (error) {
     debugPrint('Supabase init error: $error');
   }
-  runApp(const MindTrackClientApp());
+}
+
+class _ClientBootstrapApp extends StatelessWidget {
+  const _ClientBootstrapApp({required this.initialization});
+
+  final Future<void> initialization;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<void>(
+      future: initialization,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData &&
+            snapshot.connectionState != ConnectionState.done) {
+          return const _ClientStartupState();
+        }
+        return const MindTrackClientApp();
+      },
+    );
+  }
+}
+
+class _ClientStartupState extends StatelessWidget {
+  const _ClientStartupState();
+
+  @override
+  Widget build(BuildContext context) {
+    return const MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        backgroundColor: Color(0xFFF5FAFA),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 32,
+                height: 32,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              ),
+              SizedBox(height: 18),
+              Text(
+                'MindTrack hazırlanıyor…',
+                style: TextStyle(
+                  color: Color(0xFF194643),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class MindTrackClientApp extends StatelessWidget {

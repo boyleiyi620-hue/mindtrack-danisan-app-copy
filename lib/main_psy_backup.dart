@@ -12,6 +12,23 @@ import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  runApp(const _PsychologistBootstrapApp());
+}
+
+class _PsychologistBootstrapApp extends StatefulWidget {
+  const _PsychologistBootstrapApp();
+
+  @override
+  State<_PsychologistBootstrapApp> createState() =>
+      _PsychologistBootstrapAppState();
+}
+
+class _PsychologistBootstrapAppState
+    extends State<_PsychologistBootstrapApp> {
+  late final Future<_PsychologistBootstrapResult> _initialization =
+      _initialize();
+
+  Future<_PsychologistBootstrapResult> _initialize() async {
   final backendInitialization = () async {
     try {
       await MindTrackBackend.init();
@@ -26,11 +43,80 @@ Future<void> main() async {
   final store = await storeInitialization;
   final backendReady = await backendInitialization;
   final data = DataStore(store);
-  runApp(MindTrackApp(
-    store: store,
-    data: data,
-    backendSignedIn: backendReady && MindTrackBackend.instance.isSignedIn,
-  ));
+    return _PsychologistBootstrapResult(
+      store: store,
+      data: data,
+      backendSignedIn: backendReady && MindTrackBackend.instance.isSignedIn,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<_PsychologistBootstrapResult>(
+      future: _initialization,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const _StartupState();
+        }
+        if (!snapshot.hasData) {
+          return const _StartupState();
+        }
+        final result = snapshot.data!;
+        return MindTrackApp(
+          store: result.store,
+          data: result.data,
+          backendSignedIn: result.backendSignedIn,
+        );
+      },
+    );
+  }
+}
+
+class _PsychologistBootstrapResult {
+  const _PsychologistBootstrapResult({
+    required this.store,
+    required this.data,
+    required this.backendSignedIn,
+  });
+
+  final AccountStore store;
+  final DataStore data;
+  final bool backendSignedIn;
+}
+
+class _StartupState extends StatelessWidget {
+  const _StartupState();
+
+  @override
+  Widget build(BuildContext context) {
+    return const MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        backgroundColor: Color(0xFFF5FAFA),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 32,
+                height: 32,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              ),
+              SizedBox(height: 18),
+              Text(
+                'MindTrack hazırlanıyor…',
+                style: TextStyle(
+                  color: Color(0xFF194643),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class MindTrackApp extends StatelessWidget {
