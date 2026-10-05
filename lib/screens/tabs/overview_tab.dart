@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../data/data_store.dart';
 import '../../models/app_data.dart';
 import '../../models/appointment.dart';
+import '../../models/client.dart';
 import '../../models/task.dart';
 import '../../models/user_account.dart';
 import '../../theme/app_theme.dart';
@@ -70,6 +71,8 @@ class _OverviewTabState extends State<OverviewTab> {
               PendingAppointmentRequests(data: _data),
               const SizedBox(height: 16),
               _statsGrid(context),
+              const SizedBox(height: 18),
+              _reminderCard(context, now),
               const SizedBox(height: 18),
               _upcomingColumn(
                 context,
@@ -239,6 +242,88 @@ class _OverviewTabState extends State<OverviewTab> {
   int _pendingAppts(String today) => _d.appointments
       .where((a) => a.date.compareTo(today) >= 0 && a.status == 'planned')
       .length;
+
+  Widget _reminderCard(BuildContext context, DateTime now) {
+    final reminders = _d.appointments.where((appointment) {
+      if (appointment.status != 'planned') return false;
+      final at = DateTime.tryParse('${appointment.date}T${appointment.time}:00');
+      if (at == null) return false;
+      final difference = at.difference(now);
+      return !difference.isNegative && difference <= const Duration(hours: 24);
+    }).toList()
+      ..sort((a, b) {
+        final aAt = DateTime.parse('${a.date}T${a.time}:00');
+        final bAt = DateTime.parse('${b.date}T${b.time}:00');
+        return aAt.compareTo(bAt);
+      });
+
+    if (reminders.isEmpty) return const SizedBox.shrink();
+    final clients = <String, Client>{
+      for (final client in _d.clients) client.id: client,
+    };
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.warning.withValues(alpha: .09),
+        borderRadius: BorderRadius.circular(AppSizes.radius),
+        border: Border.all(color: AppColors.warning.withValues(alpha: .35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.notifications_active_outlined,
+                  color: AppColors.warning),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Yaklaşan randevu hatırlatmaları',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                ),
+              ),
+              TextButton(
+                onPressed: () => widget.onNavigate?.call('appointments'),
+                child: const Text('Takvime git'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          for (final appointment in reminders.take(4))
+            _reminderRow(appointment, clients[appointment.clientId], now),
+        ],
+      ),
+    );
+  }
+
+  Widget _reminderRow(Appointment appointment, Client? client, DateTime now) {
+    final at = DateTime.parse('${appointment.date}T${appointment.time}:00');
+    final minutes = at.difference(now).inMinutes;
+    final timing = minutes < 60
+        ? '$minutes dk sonra'
+        : minutes < 24 * 60
+            ? '${minutes ~/ 60} saat sonra'
+            : appointment.date;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: [
+          const Icon(Icons.schedule, size: 18, color: AppColors.warning),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '${client?.name.isNotEmpty == true ? client!.name : 'Randevu'} · ${appointment.time}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          Text(timing, style: const TextStyle(color: AppColors.muted)),
+        ],
+      ),
+    );
+  }
 
   Widget _statCard(_Stat s) {
     return Container(
