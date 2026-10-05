@@ -4,6 +4,7 @@
 
   let acceptedUpdate = false;
   let controllerChangedWhileEditing = false;
+  let hadControllerAtStartup = Boolean(navigator.serviceWorker.controller);
   let pendingRegistration;
   let installPromptEvent;
 
@@ -129,6 +130,12 @@
   }, true);
 
   navigator.serviceWorker.addEventListener('controllerchange', () => {
+    // First-time PWA control does not require reloading: this document already
+    // has the current network response. Reload only when replacing an old SW.
+    if (!hadControllerAtStartup) {
+      hadControllerAtStartup = true;
+      return;
+    }
     if (isTextEditor(document.activeElement)) {
       controllerChangedWhileEditing = true;
       return;
