@@ -54,22 +54,15 @@ const slowBootTimer = window.setTimeout(() => {
 
 retryButton?.addEventListener('click', () => window.location.reload());
 
-_flutter.loader.load({
-  onEntrypointLoaded: async (engineInitializer) => {
-    try {
-      // Keep CanvasKit's default WebGL acceleration; CPU-only rendering is
-      // noticeably slower on phones.
-      const appRunner = await engineInitializer.initializeEngine({
-        canvasKitBaseUrl: 'canvaskit/',
-      });
-      await appRunner.runApp();
-      window.clearTimeout(slowBootTimer);
-      bootSplash?.remove();
-    } catch (error) {
-      window.clearTimeout(slowBootTimer);
-      console.error('MindTrack web app failed to start:', error);
-      if (bootMessage) bootMessage.textContent = 'Uygulama açılamadı. Lütfen yeniden deneyin.';
-      if (retryButton) retryButton.hidden = false;
-    }
-  },
+// Let Flutter's generated loader own engine initialization and runApp. A
+// custom entrypoint callback can leave the app permanently blank if
+// any part of that hand-off throws.
+const bootObserver = new MutationObserver(() => {
+  if (!document.querySelector('flt-glass-pane')) return;
+  window.clearTimeout(slowBootTimer);
+  bootSplash?.remove();
+  bootObserver.disconnect();
 });
+bootObserver.observe(document.documentElement, { childList: true, subtree: true });
+
+_flutter.loader.load({ config: { canvasKitBaseUrl: 'canvaskit/' } });
