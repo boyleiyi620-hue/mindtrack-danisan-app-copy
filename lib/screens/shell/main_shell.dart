@@ -109,6 +109,7 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   int _index = 0;
   bool _locked = false;
+  late List<Widget Function()> _tabBuilders;
 
   AppMode? get _selectedMode {
     final m = _u.appMode;
@@ -121,6 +122,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
     setState(() {
       _u.appMode = m.name;
       _index = 0;
+      _rebuildTabBuilders();
     });
     widget.store.updateUser(_u);
   }
@@ -134,6 +136,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    _rebuildTabBuilders();
     WidgetsBinding.instance.addObserver(this);
     _locked = widget.store.isLocked;
     _watchTimer = Timer.periodic(const Duration(seconds: 15), (_) {
@@ -234,10 +237,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTapDown: (_) => _tick(),
-              child: AnimatedBuilder(
-                animation: widget.data,
-                builder: (context, _) => _content(),
-              ),
+              child: _content(),
             ),
           ),
         ],
@@ -655,22 +655,36 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   }
 
   Widget _content() {
-    final List<Widget> views = [
-      OverviewTab(account: _u, data: widget.data, onNavigate: _goTab),
-      FormsTab(data: widget.data),
-      ClientsTab(data: widget.data, onNavigate: _goTab),
-      AppointmentsTab(data: widget.data),
-      ReportsTab(data: widget.data),
-      TasksTab(data: widget.data),
-      PdfsTab(data: widget.data),
+    final safeIndex = _index.clamp(0, _tabBuilders.length - 1);
+    return IndexedStack(
+      index: safeIndex,
+      children: [
+        for (var i = 0; i < _tabBuilders.length; i++)
+          _DataAwareTab(
+            key: ValueKey('mindtrack-tab-$i'),
+            data: widget.data,
+            active: i == safeIndex,
+            builder: _tabBuilders[i],
+          ),
+      ],
+    );
+  }
+
+  void _rebuildTabBuilders() {
+    _tabBuilders = [
+      () => OverviewTab(account: _u, data: widget.data, onNavigate: _goTab),
+      () => FormsTab(data: widget.data),
+      () => ClientsTab(data: widget.data, onNavigate: _goTab),
+      () => AppointmentsTab(data: widget.data),
+      () => ReportsTab(data: widget.data),
+      () => TasksTab(data: widget.data),
+      () => PdfsTab(data: widget.data),
     ];
-
     if (_selectedMode == AppMode.commercial) {
-      views.add(FinanceTab(data: widget.data));
+      _tabBuilders.add(() => FinanceTab(data: widget.data));
     }
-
-    views.add(
-      SettingsTab(
+    _tabBuilders.add(
+      () => SettingsTab(
         data: widget.data,
         onProfileChanged: () => setState(() {}),
         onLockRequest: _lock,
@@ -678,8 +692,64 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
         onLogout: _logout,
       ),
     );
-
-    final safeIndex = _index.clamp(0, views.length - 1);
-    return IndexedStack(index: safeIndex, children: views);
   }
+}
+
+/// Keeps inactive tabs alive without rebuilding their heavy lists for every
+/// sync-status notification. Only the visible tab receives data updates.
+class _DataAwareTab extends StatefulWidget {
+  const _DataAwareTab({
+    super.key,
+    required this.data,
+    required this.active,
+    required this.builder,
+  });
+
+  final DataStore data;
+  final bool active;
+  final Widget Function() builder;
+
+  @override
+  State<_DataAwareTab> createState() => _DataAwareTabState();
+}
+
+class _DataAwareTabState extends State<_DataAwareTab> {
+  late Widget _child;
+
+  @override
+  void initState() {
+    super.initState();
+    _child = widget.builder();
+    if (widget.active) widget.data.addListener(_onDataChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _DataAwareTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.data != widget.data) {
+      oldWidget.data.removeListener(_onDataChanged);
+      if (widget.active) widget.data.addListener(_onDataChanged);
+    } else if (oldWidget.active != widget.active) {
+      if (widget.active) {
+        widget.data.addListener(_onDataChanged);
+        _child = widget.builder();
+      } else {
+        widget.data.removeListener(_onDataChanged);
+      }
+    }
+  }
+
+  void _onDataChanged() {
+    if (!mounted || !widget.active) return;
+    setState(() => _child = widget.builder());
+  }
+
+  @override
+  void dispose() {
+    widget.data.removeListener(_onDataChanged);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => _child;
 }
