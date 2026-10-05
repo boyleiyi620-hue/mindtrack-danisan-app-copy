@@ -73,6 +73,14 @@ build_target() {
 build_target "main_psych.dart" "index_psychologist.html" "manifest_psychologist.json" "psych"
 build_target "main.dart" "index_client.html" "manifest_client.json" "client"
 
+# Vercel projesi psikolog bundle'ını kök dizin olarak sunuyor. Danışan için
+# ayrı bir proje/alan adı tanımlanana kadar iki uygulamayı aynı yayında da
+# erişilebilir tut: /client/ kendi Flutter çıktı ağacına sahip olsun.
+rm -rf "$BUILD_DIR/psych/client"
+cp -a "$BUILD_DIR/client" "$BUILD_DIR/psych/client"
+sed -i 's#<base href="/">#<base href="/client/">#' \
+  "$BUILD_DIR/psych/client/index.html"
+
 echo "Web çıktıları hazırlandı:"
 echo "  Psikolog: $BUILD_DIR/psych"
-echo "  Danışan:  $BUILD_DIR/client"
+echo "  Danışan:  $BUILD_DIR/client ve $BUILD_DIR/psych/client"
