@@ -124,22 +124,61 @@ class MindTrackBackend {
 
   /// Psikologun AppData'sının uzak kopyası. Psikologun tüm klinik kaydı
   /// tek bir jsonb satırında tutulur.
-  Stream<Map<String, dynamic>?> watchState() {
+  Stream<RemoteStateSnapshot?> watchState() {
     final uid = userId;
-    if (uid == null) return Stream<Map<String, dynamic>?>.value(null);
+    if (uid == null) return Stream<RemoteStateSnapshot?>.value(null);
     return _watchOne('psychologist_state', {
       'psychologist_id': uid,
-    }, selector: (r) => r['data'] as Map<String, dynamic>?);
+    }, selector: (r) {
+      final data = r['data'];
+      if (data is! Map) return null;
+      return RemoteStateSnapshot(
+        data: Map<String, dynamic>.from(data),
+        version: (r['state_version'] as num?)?.toInt() ?? 0,
+      );
+    });
   }
 
-  Future<void> saveState(Map<String, dynamic> data) async {
+  Future<int> saveState(
+    Map<String, dynamic> data, {
+    required int expectedVersion,
+  }) async {
     final uid = userId;
-    if (uid == null) return;
-    await _guard(() async {
-      await _db.from('psychologist_state').upsert({
-        'psychologist_id': uid,
-        'data': data,
-      }, onConflict: 'psychologist_id');
+    if (uid == null) return expectedVersion;
+    return _guard(() async {
+      final current = await _db
+          .from('psychologist_state')
+          .select('state_version')
+          .eq('psychologist_id', uid)
+          .maybeSingle();
+      final currentVersion = (current?['state_version'] as num?)?.toInt() ?? 0;
+      if ((current == null && expectedVersion != 0) ||
+          (current != null && currentVersion != expectedVersion)) {
+        throw StateConflictException();
+      }
+      final nextVersion = expectedVersion + 1;
+      if (current == null) {
+        try {
+          await _db.from('psychologist_state').insert({
+            'psychologist_id': uid,
+            'data': data,
+            'state_version': nextVersion,
+          });
+        } on PostgrestException catch (error) {
+          if (error.code == '23505') throw StateConflictException();
+          rethrow;
+        }
+        return nextVersion;
+      }
+      final updated = await _db
+          .from('psychologist_state')
+          .update({'data': data, 'state_version': nextVersion})
+          .eq('psychologist_id', uid)
+          .eq('state_version', expectedVersion)
+          .select('state_version')
+          .maybeSingle();
+      if (updated == null) throw StateConflictException();
+      return nextVersion;
     });
   }
 
@@ -757,12 +796,12 @@ class MindTrackBackend {
   }
 
   /// Tek satırlık kayıtların canlı akışı (`_watch` liste döndürür).
-  Stream<Map<String, dynamic>?> _watchOne(
+  Stream<T?> _watchOne<T>(
     String table,
     Map<String, Object?> filters, {
-    required Map<String, dynamic>? Function(Map<String, dynamic>) selector,
+    required T? Function(Map<String, dynamic>) selector,
   }) {
-    final controller = StreamController<Map<String, dynamic>?>();
+    final controller = StreamController<T?>();
     late final RealtimeChannel channel;
 
     Future<void> emit() async {
@@ -877,6 +916,21 @@ class BackendException implements Exception {
 
   @override
   String toString() => message;
+}
+
+class StateConflictException extends BackendException {
+  StateConflictException()
+      : super(
+          'Bu kayıt başka bir cihazda değiştirildi. Yerel değişiklikleriniz '
+          'bu cihazda korundu; veri ezilmedi.',
+        );
+}
+
+class RemoteStateSnapshot {
+  const RemoteStateSnapshot({required this.data, required this.version});
+
+  final Map<String, dynamic> data;
+  final int version;
 }
 
 class PairingClaim {

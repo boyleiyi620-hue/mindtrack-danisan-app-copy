@@ -35,10 +35,12 @@ class DataStore extends ChangeNotifier {
   int? _pendingRemoteRevision;
   UserAccount? _pendingRemoteUser;
   Timer? _remoteSaveTimer;
-  StreamSubscription<Map<String, dynamic>?>? _remoteSubscription;
+  StreamSubscription<RemoteStateSnapshot?>? _remoteSubscription;
   Future<void> _localSaveChain = Future<void>.value();
   int _saveRevision = 0;
   int _persistedRevision = 0;
+  int _remoteVersion = 0;
+  bool _hasConflict = false;
 
   // --- Kalıcı senkronizasyon durumu ---------------------------------------
   // Uzak yazma başarısız olduğunda yerel snapshot diske alınır ve "kirli"
@@ -144,10 +146,10 @@ class DataStore extends ChangeNotifier {
   }
 
   Future<void> _applyRemoteState(
-    Map<String, dynamic>? remote,
+    RemoteStateSnapshot? snapshot,
     UserAccount localUser,
   ) async {
-    if (remote == null) return;
+    if (snapshot == null) return;
     try {
       // Bu cihazda sunucuya gitmemiş değişiklik varsa gelen durum
       // koşulsuz üzerine yazılırsa notlar kaybolur. Önce yerel
@@ -157,10 +159,12 @@ class DataStore extends ChangeNotifier {
       // işaret temizlenmeden uygulanmamalı. Aksi halde yazma sürerken gelen
       // olay son yerel değişikliği tekrar eski uzak kopyayla ezebilir.
       if (hasUnsyncedChanges) {
+        _remoteVersion = snapshot.version;
         unawaited(_saveRemote(jsonEncode(data.toJson())));
         return;
       }
-      final next = AppData.fromJson(remote);
+      _remoteVersion = snapshot.version;
+      final next = AppData.fromJson(snapshot.data);
       final removedDuplicates = deduplicateClientsByEmail(next);
       // Sunucu gövdeyi taşımaz; bu cihazda indirilmiş belgeler
       // korunur, olmayanlar ilk açıldığında indirilir.
@@ -326,10 +330,18 @@ class DataStore extends ChangeNotifier {
           // Aksi halde ücretsiz plandaki 500 MB'lık veritabanı birkaç dosyada
           // dolar ve (eski sürümdeki gibi) senkron tümüyle durur.
           final slim = await _slimForRemote(payload);
-          await backend.saveState(slim);
+          _remoteVersion = await backend.saveState(
+            slim,
+            expectedVersion: _remoteVersion,
+          );
           await _onRemoteSaved(payloadRevision, payloadUser);
         } catch (error) {
-          _onRemoteFailed(error);
+          if (error is StateConflictException) {
+            _hasConflict = true;
+            _setPhase(SyncPhase.error, message: error.message);
+          } else {
+            _onRemoteFailed(error);
+          }
           break;
         }
       }
@@ -484,6 +496,13 @@ class DataStore extends ChangeNotifier {
   /// Kullanıcı "Şimdi dene" dediğinde elle tetikler.
   Future<void> retrySyncNow() async {
     if (accounts.current == null) return;
+    if (_hasConflict) {
+      _setPhase(
+        SyncPhase.error,
+        message: 'Çakışma çözülmeden yerel verinin üzerine yazılmayacak.',
+      );
+      return;
+    }
     if (!MindTrackBackend.instance.isSignedIn) {
       _setPhase(SyncPhase.offline, message: 'Sunucuya ulaşılamıyor');
       return;
