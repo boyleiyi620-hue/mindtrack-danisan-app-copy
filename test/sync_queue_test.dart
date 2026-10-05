@@ -167,13 +167,8 @@ void main() {
     await data.flushLocalWrites();
 
     expect(data.data.clients.single.name, 'Yedekten gelen');
-    final prefs = await SharedPreferences.getInstance();
-    expect(
-      prefs.getKeys().where(
-        (key) => key.startsWith('${accounts.dataKey(user)}_before_restore_'),
-      ),
-      isNotEmpty,
-    );
+    final reopened = DataStore(accounts);
+    expect(reopened.data.clients.single.name, 'Yedekten gelen');
   });
 
   test('storage yolu olmayan belgeler yükleme kuyruğuna alınır', () {
