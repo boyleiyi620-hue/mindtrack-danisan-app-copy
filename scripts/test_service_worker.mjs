@@ -54,6 +54,15 @@ assert.ok(
     psychologistPage.indexOf('navigator.serviceWorker.register'),
   'Flutter must start before waiting for service-worker registration',
 );
+const clientPage = await readFile(
+  new URL('../web/index_client.html', import.meta.url),
+  'utf8',
+);
+assert.ok(
+  clientPage.indexOf('document.body.append(bootstrap)') <
+    clientPage.indexOf('navigator.serviceWorker.register'),
+  'client Flutter must start before waiting for service-worker registration',
+);
 const handlers = new Map();
 let fetchCount = 0;
 let navigationCount = 0;
