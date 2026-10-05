@@ -6,8 +6,17 @@ const bootstrap = await readFile(
   new URL('../web/flutter_bootstrap.js', import.meta.url),
   'utf8',
 );
-assert.match(bootstrap, /_flutter\.loader\.load\(\);\s*$/);
+assert.match(bootstrap, /_flutter\.loader\.load\(\{\s*onEntrypointLoaded:/);
+assert.match(bootstrap, /canvasKitBaseUrl:\s*'canvaskit\/'/);
+assert.match(bootstrap, /mindtrack-boot/);
+assert.doesNotMatch(bootstrap, /https:\/\/www\.gstatic\.com\/flutter-canvaskit/);
 assert.doesNotMatch(bootstrap, /canvasKitForceCpuOnly\s*:\s*true/);
+
+for (const page of ['index.html', 'index_client.html', 'index_psychologist.html']) {
+  const html = await readFile(new URL(`../web/${page}`, import.meta.url), 'utf8');
+  assert.match(html, /id="mindtrack-boot"/);
+  assert.match(html, /mindtrack-sw-network-v6/);
+}
 
 const source = await readFile(
   new URL('../web/disable_flutter_service_worker.js', import.meta.url),

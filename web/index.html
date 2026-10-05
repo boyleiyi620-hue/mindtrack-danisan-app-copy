@@ -12,12 +12,23 @@
   <link rel="icon" type="image/png" href="favicon.png">
   <title>MindTrack — Danışan Uygulaması</title>
   <link rel="manifest" href="manifest.json">
+  <style>
+    #mindtrack-boot{position:fixed;z-index:2147482000;inset:0;display:grid;place-content:center;justify-items:center;gap:14px;background:#f8fbfb;color:#173c39;font:600 15px/1.4 system-ui,sans-serif}
+    #mindtrack-boot-spinner{width:34px;height:34px;border:3px solid #c9ddda;border-top-color:#347f76;border-radius:50%;animation:mindtrack-spin .8s linear infinite}
+    #mindtrack-boot-retry{border:0;border-radius:8px;padding:10px 16px;background:#347f76;color:white;font:600 14px system-ui,sans-serif;cursor:pointer}
+    @keyframes mindtrack-spin{to{transform:rotate(360deg)}}
+  </style>
 </head>
 <body>
+  <div id="mindtrack-boot" role="status" aria-live="polite">
+    <span id="mindtrack-boot-spinner" aria-hidden="true"></span>
+    <span id="mindtrack-boot-message">MindTrack açılıyor…</span>
+    <button id="mindtrack-boot-retry" type="button" hidden>Yeniden dene</button>
+  </div>
   <script src="pwa_update.js"></script>
   <script>
     (async () => {
-      const marker = 'mindtrack-sw-network-v5';
+      const marker = 'mindtrack-sw-network-v6';
       try {
         if ('serviceWorker' in navigator) {
           const registration = await navigator.serviceWorker.register(
@@ -33,7 +44,7 @@
         console.warn('MindTrack service worker update skipped:', error);
       }
       const bootstrap = document.createElement('script');
-      bootstrap.src = 'flutter_bootstrap.js?mindtrack-build-20261004-r1';
+      bootstrap.src = 'flutter_bootstrap.js?mindtrack-build-20261005-r2';
       bootstrap.async = true;
       document.body.append(bootstrap);
     })();
