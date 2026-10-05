@@ -1,8 +1,9 @@
 # MindTrack — Supabase Kurulum Rehberi
 
-> ## ⚠️ Temel kurulum tamamlandı; randevu migration'ı bekliyor
+> ## ⚠️ Temel kurulum tamamlandı; kayıt bazlı geçiş kademeli ilerliyor
 >
-> Proje oluşturuldu. Canlı projede temel migration'lar mevcut; randevu iş akışı migration'ı henüz uygulanmamış görünüyor.
+> Proje oluşturuldu. Canlı projede temel migration'lar mevcut; kayıt bazlı klinik veri
+> tablosu mevcut JSON yapısını bozmadan kademeli olarak devreye alınmaktadır.
 >
 > | | |
 > | --- | --- |
@@ -11,9 +12,9 @@
 > | URL | `https://aqswdmhwqhrsempoiqfv.supabase.co` |
 > | Bölge | `ap-northeast-2` (Seoul) |
 > | Plan | Free |
-> | Migration | `20260929120000`, `20260929120100` uygulanmış; `20260929133000` uygulanmalı |
+> | Migration | Dosyalar aşağıdaki sırayla uygulanmalı |
 >
-> **Kalan işler:** Önce `20260929133000_appointment_workflow.sql` migration'ını çalıştırın; ardından e-posta doğrulaması için SMTP kurun.
+> **Kalan işler:** Migration dosyalarını sırayla çalıştırın; ardından e-posta doğrulaması için SMTP kurun.
 > Bu yapılmadan yeni kullanıcı kaydolamaz.
 >
 > Bu dokümanın kalanı, projeyi sıfırdan kuranlar veya başka bir ortama
@@ -106,6 +107,7 @@ Migration dosyaları hazır ve **sırayla** çalıştırılmalıdır:
 | `supabase/migrations/20260929120000_mindtrack_init.sql` | Tablolar, indeksler, RLS politikaları, sütun bazlı yetkiler |
 | `supabase/migrations/20260929120100_mindtrack_functions.sql` | RPC fonksiyonları, PDF depolama kovası, realtime yayın |
 | `supabase/migrations/20260929133000_appointment_workflow.sql` | Danışan randevu talebi, psikolog onayı/reddi ve iki taraflı durum senkronizasyonu |
+| `supabase/migrations/20261005160000_psychologist_records.sql` | Klinik kayıtların ayrı satırlar ve RLS ile kademeli taşınacağı temel tablo |
 
 ### Yöntem A — SQL Editor (CLI kurmanız gerekmez, önerilir)
 
@@ -114,11 +116,12 @@ Migration dosyaları hazır ve **sırayla** çalıştırılmalıdır:
 3. Sonuç `Success` dönüyorsa yeni bir sorgu açıp
    `20260929120100_mindtrack_functions.sql` içeriğini yapıştırın → **Run**
 4. `20260929133000_appointment_workflow.sql` içeriğinin tamamını yapıştırın → **Run**
+5. `20261005160000_psychologist_records.sql` içeriğinin tamamını yapıştırın → **Run**
 
 Oluşturulanlar:
 
 - **Tablolar:** `psychologist_state`, `patients`, `pairing_codes`,
-  `appointments`, `tasks`, `homework`
+  `appointments`, `tasks`, `homework`, `psychologist_records`
 - **Depolama kovası:** `mindtrack-pdfs` (özel, herkese kapalı)
 - **Fonksiyonlar:** `claim_pairing_code`, `cancel_appointment`,
   `delete_own_appointment`, `submit_task`, `submit_homework`,
