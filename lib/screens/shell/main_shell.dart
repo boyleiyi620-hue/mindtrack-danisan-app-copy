@@ -732,7 +732,9 @@ class _DataAwareTabState extends State<_DataAwareTab> {
     } else if (oldWidget.active != widget.active) {
       if (widget.active) {
         widget.data.addListener(_onDataChanged);
-        _child ??= widget.builder();
+        // Inactive tabs do not listen to data changes. Recreate the visible
+        // tab when returning so it reflects the latest snapshot.
+        _child = widget.builder();
       } else {
         widget.data.removeListener(_onDataChanged);
       }
