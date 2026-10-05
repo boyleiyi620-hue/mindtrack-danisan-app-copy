@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show AuthState;
@@ -94,8 +96,35 @@ class MindTrackClientApp extends StatelessWidget {
   }
 }
 
-class AuthGate extends StatelessWidget {
+class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
+
+  @override
+  State<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<AuthGate> {
+  Timer? _timeout;
+  bool _timedOut = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _startTimeout();
+  }
+
+  void _startTimeout() {
+    _timeout?.cancel();
+    _timeout = Timer(const Duration(seconds: 8), () {
+      if (mounted) setState(() => _timedOut = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timeout?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -115,14 +144,63 @@ class AuthGate extends StatelessWidget {
     return StreamBuilder<AuthState>(
       stream: MindTrackBackend.instance.authStateChanges(),
       builder: (context, snapshot) {
+        // Supabase may restore a session before its stream emits the initial
+        // event. Do not make an already authenticated user wait for it.
+        if (MindTrackBackend.instance.isSignedIn ||
+            snapshot.data?.session != null) {
+          _timeout?.cancel();
+          return const ClientShell();
+        }
+        if (_timedOut) {
+          return _ClientAuthRetry(onRetry: () {
+            setState(() => _timedOut = false);
+            _startTimeout();
+          });
+        }
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        if (snapshot.data?.session == null) return const LoginScreen();
-        return const ClientShell();
+        return const LoginScreen();
       },
+    );
+  }
+}
+
+class _ClientAuthRetry extends StatelessWidget {
+  const _ClientAuthRetry({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Oturum bilgisi alınamadı.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Bağlantınızı kontrol edip tekrar deneyin.',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: onRetry,
+                child: const Text('Yeniden dene'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
