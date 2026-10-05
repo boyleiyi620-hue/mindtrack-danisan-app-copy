@@ -88,7 +88,9 @@ class MindTrackBackend {
     await _guard(() async {
       await _db.auth.signInWithOAuth(
         OAuthProvider.google,
-        redirectTo: Uri.base.origin,
+        // PWA /client gibi bir alt yoldan açıldıysa OAuth dönüşü aynı ekrana
+        // gelsin; yalnızca origin kullanmak danışanı giriş ekranında bırakır.
+        redirectTo: Uri.base.replace(query: '', fragment: '').toString(),
         // Her tıklamada Google hesap seçicisini göster; tarayıcıdaki yanlış
         // Google oturumu sessizce seçilerek başka kullanıcıya bağlanmasın.
         queryParams: const {'prompt': 'select_account'},
@@ -853,7 +855,9 @@ class MindTrackBackend {
     // veya proxy/websocket bağlantısı koptuğunda olay kaçırabilir. Realtime
     // olaylarını korurken kısa bir sorgu yedeği kullanmak, talep/onay
     // değişikliklerinin uygulamadan çıkıp girmeden görünmesini garanti eder.
-    refreshTimer = Timer.periodic(const Duration(seconds: 2), (_) => emit());
+    // Kısa süreli ağ kopmalarında akış kendini toparlasın; 2 saniyelik sorgu
+    // döngüsü düşük cihazlarda gereksiz kasmaya neden oluyordu.
+    refreshTimer = Timer.periodic(const Duration(seconds: 15), (_) => emit());
 
     controller.onCancel = () async {
       refreshTimer?.cancel();
@@ -899,6 +903,10 @@ class MindTrackBackend {
     channel.subscribe((status, error) {
       if (status == RealtimeSubscribeStatus.subscribed) emit();
     });
+
+    // İlk veriyi WebSocket aboneliğini beklemeden al. Aksi halde danışan,
+    // Realtime bağlantısı geç kurulursa sonsuz yükleniyor ekranında kalır.
+    unawaited(emit());
 
     controller.onCancel = () async {
       await _db.removeChannel(channel);

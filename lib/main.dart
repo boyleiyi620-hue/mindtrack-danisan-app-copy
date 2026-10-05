@@ -107,7 +107,9 @@ class AuthGate extends StatefulWidget {
 
 class _AuthGateState extends State<AuthGate> {
   Timer? _timeout;
+  Timer? _loginFallback;
   bool _timedOut = false;
+  bool _showLoginWhileRestoring = false;
 
   @override
   void initState() {
@@ -117,6 +119,11 @@ class _AuthGateState extends State<AuthGate> {
 
   void _startTimeout() {
     _timeout?.cancel();
+    _loginFallback?.cancel();
+    _showLoginWhileRestoring = false;
+    _loginFallback = Timer(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _showLoginWhileRestoring = true);
+    });
     // Ağır/uyuyan Supabase oturum geri yüklemelerinde kullanıcıya geniş bir
     // pencere tanı; sonsuz beklemeyi yine de önle.
     _timeout = Timer(const Duration(minutes: 8), () {
@@ -127,6 +134,7 @@ class _AuthGateState extends State<AuthGate> {
   @override
   void dispose() {
     _timeout?.cancel();
+    _loginFallback?.cancel();
     super.dispose();
   }
 
@@ -161,7 +169,8 @@ class _AuthGateState extends State<AuthGate> {
             _startTimeout();
           });
         }
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !_showLoginWhileRestoring) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
@@ -467,16 +476,25 @@ class _ClientShellState extends State<ClientShell> {
           return const PairingScreen();
         }
 
-        final pages = [
-          ClientOverview(patient: patient, psychologistId: psychologistId),
-          ClientAppointments(patient: patient, psychologistId: psychologistId),
-          ClientHomeworks(patient: patient, psychologistId: psychologistId),
-          ClientProfile(patient: patient),
-        ];
-        final safeIndex = _idx.clamp(0, pages.length - 1);
+        final safeIndex = _idx.clamp(0, 3);
+        final Widget page = switch (safeIndex) {
+          0 => ClientOverview(
+              patient: patient,
+              psychologistId: psychologistId,
+            ),
+          1 => ClientAppointments(
+              patient: patient,
+              psychologistId: psychologistId,
+            ),
+          2 => ClientHomeworks(
+              patient: patient,
+              psychologistId: psychologistId,
+            ),
+          _ => ClientProfile(patient: patient),
+        };
 
         return Scaffold(
-          body: pages[safeIndex],
+          body: page,
           bottomNavigationBar: NavigationBar(
             selectedIndex: safeIndex,
             onDestinationSelected: (index) => setState(() => _idx = index),
