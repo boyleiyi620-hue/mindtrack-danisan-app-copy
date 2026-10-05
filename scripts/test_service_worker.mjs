@@ -16,6 +16,7 @@ const source = await readFile(
 const handlers = new Map();
 let fetchCount = 0;
 let navigationCount = 0;
+let skipWaitingCount = 0;
 const oldResponse = new Response('old cached bundle');
 const context = {
   URL,
@@ -24,7 +25,9 @@ const context = {
   self: {
     location: { origin: 'https://app.test' },
     addEventListener: (name, handler) => handlers.set(name, handler),
-    skipWaiting: async () => {},
+    skipWaiting: async () => {
+      skipWaitingCount += 1;
+    },
     clients: {
       claim: async () => {},
       matchAll: async () => [
@@ -53,7 +56,10 @@ vm.runInNewContext(source, context);
 let activation;
 handlers.get('activate')({ waitUntil: (promise) => (activation = promise) });
 await activation;
-assert.equal(navigationCount, 1, 'activation must reload existing app tabs');
+assert.equal(navigationCount, 0, 'activation must not reload active app tabs');
+assert.equal(skipWaitingCount, 0, 'new worker must wait for user approval');
+handlers.get('message')({ data: { type: 'SKIP_WAITING' } });
+assert.equal(skipWaitingCount, 1, 'approved update message may activate worker');
 
 let networkResponse;
 handlers.get('fetch')({

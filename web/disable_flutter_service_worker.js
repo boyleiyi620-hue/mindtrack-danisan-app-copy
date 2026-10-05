@@ -1,8 +1,10 @@
-const CACHE_NAME = 'mindtrack-static-v9';
+const CACHE_NAME = 'mindtrack-static-v10';
 const STATIC_FILE = /\.(?:js|wasm|json|png|jpg|jpeg|gif|svg|ico|otf|ttf|woff2?)$/i;
 
-self.addEventListener('install', (event) => {
-  self.skipWaiting();
+self.addEventListener('install', () => {});
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
@@ -16,19 +18,7 @@ self.addEventListener('activate', (event) => {
             .map((name) => caches.delete(name)),
         ),
       )
-      .then(() => self.clients.claim())
-      .then(async () => {
-        // Existing tabs keep running their old Flutter bundle until navigated.
-        // Reload them once when this worker activates so users receive the
-        // fixed appointment filtering and action handlers immediately.
-        const windows = await self.clients.matchAll({
-          type: 'window',
-          includeUncontrolled: true,
-        });
-        await Promise.all(
-          windows.map((client) => client.navigate(client.url).catch(() => null)),
-        );
-      }),
+      .then(() => self.clients.claim()),
   );
 });
 

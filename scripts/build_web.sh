@@ -56,6 +56,9 @@ build_target() {
   rm -rf "$BUILD_DIR/web" "$BUILD_DIR/$output"
   "$FLUTTER_BIN" build web --release --no-wasm-dry-run -t "lib/$target" "${DEFINES[@]}"
   cp -a "$BUILD_DIR/web" "$BUILD_DIR/$output"
+  # Flutter'ın web çıktısında kaynak web/ altındaki özel statik dosyalar
+  # garanti edilmediğinden PWA güncelleme/kayıt arayüzünü açıkça kopyala.
+  cp "$WEB_DIR/pwa_update.js" "$BUILD_DIR/$output/pwa_update.js"
   # Uygulama paketlerini tarayıcıda cache'le; Supabase API istekleri service worker
   # kapsamı dışında bırakılır.
   cp "$WEB_DIR/disable_flutter_service_worker.js" \
