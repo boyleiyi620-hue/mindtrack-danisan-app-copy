@@ -1,10 +1,11 @@
-// Updates activate automatically, but not while a text editor is focused.
+// Updates wait for explicit user approval and never discard an open edit.
 (() => {
   if (!('serviceWorker' in navigator)) return;
 
   let acceptedUpdate = false;
   let controllerChangedWhileEditing = false;
   let hadControllerAtStartup = Boolean(navigator.serviceWorker.controller);
+  let reloadAfterUpdate = false;
   let pendingRegistration;
   let installPromptEvent;
 
@@ -115,13 +116,55 @@
         element.closest('[contenteditable="true"]') !== null);
   }
 
+  function showUpdateNotice() {
+    if (document.querySelector('[data-mindtrack-update]')) return;
+    const banner = document.createElement('aside');
+    banner.dataset.mindtrackUpdate = '1';
+    banner.setAttribute('role', 'status');
+    banner.style.cssText =
+      'position:fixed;z-index:2147483000;left:16px;right:16px;bottom:16px;' +
+      'max-width:560px;margin:0 auto;padding:14px 16px;border-radius:14px;' +
+      'background:#173c39;color:#fff;box-shadow:0 8px 28px #0004;' +
+      'font:14px/1.45 system-ui,sans-serif;display:flex;align-items:center;gap:12px';
+    const copy = document.createElement('span');
+    copy.textContent = 'Yeni MindTrack sürümü hazır. Kaydettiğinizden sonra güncelleyin.';
+    copy.style.flex = '1';
+    const update = document.createElement('button');
+    update.type = 'button';
+    update.textContent = 'Güncelle';
+    update.style.cssText =
+      'border:0;border-radius:8px;padding:9px 12px;background:#fff;color:#173c39;' +
+      'font:600 13px system-ui,sans-serif;white-space:nowrap;cursor:pointer';
+    update.addEventListener('click', () => {
+      if (isTextEditor(document.activeElement)) {
+        copy.textContent = 'Önce açık alanı kaydedin, sonra güncelleyin.';
+        return;
+      }
+      acceptedUpdate = true;
+      reloadAfterUpdate = true;
+      pendingRegistration?.waiting?.postMessage({ type: 'SKIP_WAITING' });
+      update.disabled = true;
+      update.textContent = 'Güncelleniyor…';
+    });
+    const later = document.createElement('button');
+    later.type = 'button';
+    later.setAttribute('aria-label', 'Daha sonra');
+    later.textContent = '×';
+    later.style.cssText =
+      'border:0;background:transparent;color:#fff;font:24px/1 system-ui,sans-serif;' +
+      'cursor:pointer;padding:0 2px';
+    later.addEventListener('click', () => banner.remove());
+    banner.append(copy, update, later);
+    document.body.append(banner);
+  }
+
   // Flutter web uses a focused DOM editor while a text field is being edited.
   // Wait for focus to leave it; blur fires before the save button's click,
   // hence the short delay lets the save handler finish before offering reload.
   document.addEventListener('focusout', () => {
     window.setTimeout(() => {
       if (isTextEditor(document.activeElement)) return;
-      if (controllerChangedWhileEditing) {
+      if (controllerChangedWhileEditing && reloadAfterUpdate) {
         window.location.reload();
       } else {
         offerUpdate();
@@ -140,14 +183,13 @@
       controllerChangedWhileEditing = true;
       return;
     }
-    window.location.reload();
+    if (reloadAfterUpdate) window.location.reload();
   });
 
   function offerUpdate() {
     const waiting = pendingRegistration?.waiting;
-    if (!waiting || acceptedUpdate || isTextEditor(document.activeElement)) return;
-    acceptedUpdate = true;
-    waiting.postMessage({ type: 'SKIP_WAITING' });
+    if (!waiting || acceptedUpdate) return;
+    showUpdateNotice();
   }
 
   function watchRegistration(registration) {
