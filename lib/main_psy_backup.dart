@@ -9,9 +9,11 @@ import 'screens/auth/auth_screen.dart';
 import 'screens/auth/pin_screen.dart';
 import 'screens/shell/main_shell.dart' deferred as main_shell;
 import 'theme/app_theme.dart';
+import 'widgets/fatal_error_view.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  ErrorWidget.builder = (details) => FatalErrorView(details: details);
   runApp(const _PsychologistBootstrapApp());
 }
 

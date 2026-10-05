@@ -6,9 +6,11 @@ import 'package:supabase_flutter/supabase_flutter.dart' show AuthState;
 
 import 'data/diagnosis_codes.dart';
 import 'data/mindtrack_backend.dart';
+import 'widgets/fatal_error_view.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  ErrorWidget.builder = (details) => FatalErrorView(details: details);
   runApp(_ClientBootstrapApp(initialization: _initializeClient()));
 }
 
