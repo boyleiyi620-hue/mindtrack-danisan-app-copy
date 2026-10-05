@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mindtrack-static-v11';
+const CACHE_NAME = 'mindtrack-static-v12';
 const STATIC_FILE = /\.(?:js|wasm|json|png|jpg|jpeg|gif|svg|ico|otf|ttf|woff2?)$/i;
 
 // Yeni sürüm, açık sekmelerde kullanıcı notu yazıyorken devreye giremez.
