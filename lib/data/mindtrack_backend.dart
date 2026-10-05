@@ -148,9 +148,19 @@ class MindTrackBackend {
     return _guard(() async {
       final current = await _db
           .from('psychologist_state')
-          .select('state_version')
+          .select()
           .eq('psychologist_id', uid)
           .maybeSingle();
+      // Keep deployments safe while the migration is being applied. Existing
+      // projects may briefly still have the legacy schema; they continue with
+      // the old write path until `state_version` becomes available.
+      if (current != null && !current.containsKey('state_version')) {
+        await _db.from('psychologist_state').upsert({
+          'psychologist_id': uid,
+          'data': data,
+        }, onConflict: 'psychologist_id');
+        return expectedVersion;
+      }
       final currentVersion = (current?['state_version'] as num?)?.toInt() ?? 0;
       if ((current == null && expectedVersion != 0) ||
           (current != null && currentVersion != expectedVersion)) {
@@ -166,6 +176,13 @@ class MindTrackBackend {
           });
         } on PostgrestException catch (error) {
           if (error.code == '23505') throw StateConflictException();
+          if (_isMissingStateVersion(error)) {
+            await _db.from('psychologist_state').upsert({
+              'psychologist_id': uid,
+              'data': data,
+            }, onConflict: 'psychologist_id');
+            return expectedVersion;
+          }
           rethrow;
         }
         return nextVersion;
@@ -180,6 +197,11 @@ class MindTrackBackend {
       if (updated == null) throw StateConflictException();
       return nextVersion;
     });
+  }
+
+  static bool _isMissingStateVersion(PostgrestException error) {
+    final text = '${error.code} ${error.message}'.toLowerCase();
+    return text.contains('state_version') || text.contains('schema cache');
   }
 
   // ------------------------------------------------------------- danışan ---
