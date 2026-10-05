@@ -67,8 +67,8 @@ class DataStore extends ChangeNotifier {
   String _dirtyKey(UserAccount u) => 'mt_dirty_v2_${u.id}';
   String _syncedAtKey(UserAccount u) => 'mt_synced_at_v2_${u.id}';
 
-  DataStore(this.accounts) {
-    load();
+  DataStore(this.accounts, {bool autoLoad = true}) {
+    if (autoLoad) load();
   }
 
   bool get hasAccount => accounts.current != null;

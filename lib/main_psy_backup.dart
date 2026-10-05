@@ -42,7 +42,9 @@ class _PsychologistBootstrapAppState
   final storeInitialization = AccountStore.init();
   final store = await storeInitialization;
   final backendReady = await backendInitialization;
-  final data = DataStore(store);
+  // Büyük klinik JSON'unu ilk Flutter karesinden önce çözümleme; panel
+  // iskeleti göründükten sonra _DeferredMainShell tarafından yüklenir.
+  final data = DataStore(store, autoLoad: false);
     return _PsychologistBootstrapResult(
       store: store,
       data: data,
@@ -180,6 +182,9 @@ class _DeferredMainShellState extends State<_DeferredMainShell> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.data.load();
+    });
     _load();
   }
 
