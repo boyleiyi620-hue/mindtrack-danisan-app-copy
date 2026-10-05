@@ -284,6 +284,20 @@ class DataStore extends ChangeNotifier {
   /// Wait until queued local snapshots are durable (used by tests/lifecycle).
   Future<void> flushLocalWrites() => _localSaveChain;
 
+  /// Yedek geri yüklemeden önce mevcut snapshot'ı kurtarma kopyasına alır.
+  /// Kurtarma yazılamazsa yeni veri uygulanmaz; böylece yanlış/yarım geri
+  /// yükleme mevcut klinik kaydını riske atmaz.
+  Future<void> restoreFromBackup(AppData restored) async {
+    final user = accounts.current;
+    if (user == null) throw StateError('Aktif kullanıcı bulunamadı.');
+    final current = jsonEncode(data.toJson());
+    final recoveryKey =
+        '${accounts.dataKey(user)}_before_restore_${DateTime.now().microsecondsSinceEpoch}';
+    await BlobStore.instance.set(recoveryKey, current);
+    data = restored;
+    save();
+  }
+
   /// Psikolog takvimindeki durum değişikliğini ortak Supabase randevusuna da
   /// yazar. Ortak olmayan eski randevular için yardımcı işlem yapmadan döner;
   /// onlar yalnızca psikologun yerel/veri durumu içinde kaydedilir.

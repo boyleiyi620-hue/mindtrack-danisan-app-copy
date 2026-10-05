@@ -788,12 +788,24 @@ class _SettingsTabState extends State<SettingsTab> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    widget.data.data = restored;
-    widget.data.save();
-    setState(() {});
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Yedek geri yüklendi ve senkronizasyona alındı.')),
-    );
+    try {
+      await widget.data.restoreFromBackup(restored);
+      if (!mounted) return;
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Yedek geri yüklendi ve senkronizasyona alındı.'),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Mevcut veriler korunarak geri yükleme iptal edildi.'),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+    }
   }
 
   Widget _csvButton(String label, IconData icon, String kind, Key key) {
