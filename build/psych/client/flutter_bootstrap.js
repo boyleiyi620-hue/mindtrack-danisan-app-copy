@@ -91,8 +91,17 @@ window.addEventListener('unhandledrejection', (event) => {
   showStartupError('Uygulama başlatılamadı. Yeniden deneyin.', detail);
 });
 
+// Normal Chrome/PWA'da GPU hızlandırması akıcılığı belirgin artırır. Android
+// WebView ise WebGL context kaybına daha yatkındır; yalnızca o ortamda CPU
+// fallback kullan.
+const isAndroidWebView = /Android/i.test(navigator.userAgent) &&
+  (/;\s*wv\)/i.test(navigator.userAgent) ||
+    (/Version\/\d+.*Chrome\/\d+.*Mobile/i.test(navigator.userAgent) &&
+      !window.matchMedia('(display-mode: standalone)').matches));
+
 const flutterConfig = {
   canvasKitBaseUrl: 'canvaskit/',
+  ...(isAndroidWebView ? {canvasKitForceCpuOnly: true} : {}),
 };
 
 _flutter.loader.load({
