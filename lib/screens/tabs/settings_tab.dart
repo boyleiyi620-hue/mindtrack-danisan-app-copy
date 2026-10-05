@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../../data/crypto_utils.dart';
@@ -107,6 +109,8 @@ class _SettingsTabState extends State<SettingsTab> {
                       _reportCard(),
                       const SizedBox(height: 16),
                       _exportCard(),
+                      const SizedBox(height: 16),
+                      _backupCard(),
                       const SizedBox(height: 16),
                       _sampleDataCard(),
                       const SizedBox(height: 16),
@@ -680,6 +684,107 @@ class _SettingsTabState extends State<SettingsTab> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _backupCard() => _card(
+    Icons.backup_outlined,
+    'Tam Yedekleme',
+    Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Danışanlar, randevular, notlar, formlar ve ayarlarınızı tek bir JSON dosyası olarak saklayın. Yedek dosyasını güvenli yerde tutun; sağlık verisi içerir.',
+          style: TextStyle(fontSize: 12.5, color: AppColors.text2, height: 1.5),
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 10,
+          runSpacing: 8,
+          children: [
+            OutlinedButton.icon(
+              key: const Key('settings-export-backup'),
+              onPressed: _exportBackup,
+              icon: const Icon(Icons.download_outlined, size: 16),
+              label: const Text('Yedeği İndir'),
+            ),
+            OutlinedButton.icon(
+              key: const Key('settings-import-backup'),
+              onPressed: _importBackup,
+              icon: const Icon(Icons.upload_file_outlined, size: 16),
+              label: const Text('Yedek Yükle'),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+
+  Future<void> _exportBackup() async {
+    final payload = jsonEncode({
+      'format': 'mindtrack-backup',
+      'version': 1,
+      'exportedAt': DateTime.now().toUtc().toIso8601String(),
+      'data': _d.toJson(),
+    });
+    final ok = await saveTextFile(
+      'mindtrack-yedek-${todayIso()}.json',
+      payload,
+      'application/json;charset=utf-8',
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(ok ? 'Tam yedek indirildi.' : 'Yedek oluşturulamadı.')),
+    );
+  }
+
+  Future<void> _importBackup() async {
+    final raw = await pickTextFile();
+    if (raw == null || !mounted) return;
+    AppData restored;
+    try {
+      final decoded = jsonDecode(raw);
+      final map = decoded is Map<String, dynamic>
+          ? decoded
+          : Map<String, dynamic>.from(decoded as Map);
+      final source = map['format'] == 'mindtrack-backup'
+          ? map['data']
+          : map;
+      restored = AppData.fromJson(Map<String, dynamic>.from(source as Map));
+    } catch (_) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Bu dosya geçerli bir MindTrack yedeği değil.'),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Yedeği geri yükle?'),
+        content: Text(
+          '${restored.clients.length} danışan, ${restored.notes.length} seans notu ve ${restored.appointments.length} randevu yüklenecek. Mevcut veriler bu cihazda değiştirilecek.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Geri Yükle'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    widget.data.data = restored;
+    widget.data.save();
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Yedek geri yüklendi ve senkronizasyona alındı.')),
     );
   }
 

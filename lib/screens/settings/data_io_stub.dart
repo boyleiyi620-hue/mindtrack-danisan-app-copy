@@ -18,3 +18,17 @@ Future<bool> saveTextFile(String filename, String content, String mime) async {
     return false;
   }
 }
+
+Future<String?> pickTextFile() async {
+  try {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['json'],
+      withData: true,
+    );
+    final bytes = result?.files.single.bytes;
+    return bytes == null ? null : utf8.decode(bytes);
+  } catch (_) {
+    return null;
+  }
+}

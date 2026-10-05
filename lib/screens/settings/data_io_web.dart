@@ -17,3 +17,16 @@ Future<bool> saveTextFile(String filename, String content, String mime) async {
       () => html.Url.revokeObjectUrl(url)));
   return true;
 }
+
+/// Kullanıcının seçtiği metin dosyasını okur.
+Future<String?> pickTextFile() async {
+  final input = html.FileUploadInputElement()..accept = '.json,application/json';
+  input.click();
+  await input.onChange.first;
+  final file = input.files?.first;
+  if (file == null) return null;
+  final reader = html.FileReader();
+  reader.readAsText(file);
+  await reader.onLoad.first;
+  return reader.result as String?;
+}
