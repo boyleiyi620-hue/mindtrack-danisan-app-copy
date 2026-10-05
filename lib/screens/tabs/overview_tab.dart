@@ -35,7 +35,7 @@ class _OverviewTabState extends State<OverviewTab> {
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
+    final now = DateTime.now().toLocal();
     final today = todayIso();
     final firstName = _u.name
         .split(RegExp(r'\s+'))
@@ -246,14 +246,13 @@ class _OverviewTabState extends State<OverviewTab> {
   Widget _reminderCard(BuildContext context, DateTime now) {
     final reminders = _d.appointments.where((appointment) {
       if (appointment.status != 'planned') return false;
-      final at = DateTime.tryParse('${appointment.date}T${appointment.time}:00');
-      if (at == null) return false;
+      final at = _appointmentLocalTime(appointment);
       final difference = at.difference(now);
       return !difference.isNegative && difference <= const Duration(hours: 24);
     }).toList()
       ..sort((a, b) {
-        final aAt = DateTime.parse('${a.date}T${a.time}:00');
-        final bAt = DateTime.parse('${b.date}T${b.time}:00');
+        final aAt = _appointmentLocalTime(a);
+        final bAt = _appointmentLocalTime(b);
         return aAt.compareTo(bAt);
       });
 
@@ -298,7 +297,7 @@ class _OverviewTabState extends State<OverviewTab> {
   }
 
   Widget _reminderRow(Appointment appointment, Client? client, DateTime now) {
-    final at = DateTime.parse('${appointment.date}T${appointment.time}:00');
+    final at = _appointmentLocalTime(appointment);
     final minutes = at.difference(now).inMinutes;
     final timing = minutes < 60
         ? '$minutes dk sonra'
@@ -322,6 +321,24 @@ class _OverviewTabState extends State<OverviewTab> {
           Text(timing, style: const TextStyle(color: AppColors.muted)),
         ],
       ),
+    );
+  }
+
+  /// Randevu date/time alanları birer yerel duvar saati değeridir.
+  /// ISO parser'ın UTC/yerel saat varsayımına bırakılırsa bazı tarayıcılarda
+  /// hatırlatma iki saat kayabilir.
+  DateTime _appointmentLocalTime(Appointment appointment) {
+    final date = appointment.date.length >= 10
+        ? appointment.date.substring(0, 10)
+        : appointment.date;
+    final parts = date.split('-');
+    final time = appointment.time.split(':');
+    return DateTime(
+      int.parse(parts[0]),
+      int.parse(parts[1]),
+      int.parse(parts[2]),
+      int.parse(time[0]),
+      int.parse(time[1]),
     );
   }
 
