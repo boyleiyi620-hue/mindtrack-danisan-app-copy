@@ -10,13 +10,17 @@ assert.match(bootstrap, /_flutter\.loader\.load\(\{\s*config:/);
 assert.doesNotMatch(bootstrap, /onEntrypointLoaded/);
 assert.match(bootstrap, /canvasKitBaseUrl:\s*'canvaskit\/'/);
 assert.match(bootstrap, /mindtrack-boot/);
+assert.match(bootstrap, /findVisibleCanvas\(document\)/);
+assert.match(bootstrap, /canvas\.width > 0 && canvas\.height > 0/);
+assert.match(bootstrap, /Uygulama başlatılamadı/);
 assert.doesNotMatch(bootstrap, /https:\/\/www\.gstatic\.com\/flutter-canvaskit/);
 assert.doesNotMatch(bootstrap, /canvasKitForceCpuOnly\s*:\s*true/);
 
 for (const page of ['index.html', 'index_client.html', 'index_psychologist.html']) {
   const html = await readFile(new URL(`../web/${page}`, import.meta.url), 'utf8');
   assert.match(html, /id="mindtrack-boot"/);
-  assert.match(html, /mindtrack-sw-network-v7/);
+  assert.match(html, /mindtrack-sw-network-v8/);
+  assert.match(html, /bootstrap\.onerror/);
 }
 
 const source = await readFile(
