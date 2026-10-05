@@ -60,46 +60,11 @@ const retryTimer = window.setTimeout(() => {
 
 retryButton?.addEventListener('click', () => window.location.reload());
 
-function findVisibleCanvas(root) {
-  const canvases = root.querySelectorAll?.('canvas') ?? [];
-  for (const canvas of canvases) {
-    if (canvas.width > 0 && canvas.height > 0) return canvas;
-  }
-  for (const element of root.querySelectorAll?.('*') ?? []) {
-    if (element.shadowRoot) {
-      const canvas = findVisibleCanvas(element.shadowRoot);
-      if (canvas) return canvas;
-    }
-  }
-  return null;
-}
-
-let firstCanvasTimer;
-let observedFlutterShadowRoot;
 let startupFailed = false;
-const bootObserver = new MutationObserver(() => {
-  const flutterShadowRoot = document.querySelector('flt-glass-pane')?.shadowRoot;
-  if (flutterShadowRoot && flutterShadowRoot !== observedFlutterShadowRoot) {
-    observedFlutterShadowRoot = flutterShadowRoot;
-    bootObserver.observe(flutterShadowRoot, { childList: true, subtree: true });
-  }
-  if (startupFailed || firstCanvasTimer || !findVisibleCanvas(document)) return;
-  // The renderer allocates its canvas before Flutter paints its first frame.
-  // Keep the splash briefly so slow phones do not expose a blank white view.
-  firstCanvasTimer = window.setTimeout(() => {
-    if (startupFailed) return;
-    window.clearTimeout(slowBootTimer);
-    window.clearTimeout(retryTimer);
-    bootSplash?.remove();
-    bootObserver.disconnect();
-  }, 1200);
-});
-bootObserver.observe(document.documentElement, { childList: true, subtree: true });
 
 function showStartupError(message, detail = '') {
   if (!bootSplash?.isConnected) return;
   startupFailed = true;
-  window.clearTimeout(firstCanvasTimer);
   window.clearTimeout(slowBootTimer);
   window.clearTimeout(retryTimer);
   if (bootMessage) bootMessage.textContent = message;
@@ -132,9 +97,25 @@ window.addEventListener('unhandledrejection', (event) => {
 const isTouchAndroid = /Android/i.test(navigator.userAgent) &&
   window.matchMedia('(pointer: coarse)').matches;
 
+const flutterConfig = {
+  canvasKitBaseUrl: 'canvaskit/',
+  canvasKitForceCpuOnly: isTouchAndroid,
+};
+
 _flutter.loader.load({
-  config: {
-    canvasKitBaseUrl: 'canvaskit/',
-    canvasKitForceCpuOnly: isTouchAndroid,
+  config: flutterConfig,
+  onEntrypointLoaded: async (engineInitializer) => {
+    try {
+      const appRunner = await engineInitializer.initializeEngine(flutterConfig);
+      await appRunner.runApp();
+      if (startupFailed) return;
+      window.clearTimeout(slowBootTimer);
+      window.clearTimeout(retryTimer);
+      bootSplash?.remove();
+    } catch (error) {
+      const detail = error?.stack || error?.message || String(error);
+      console.error('MindTrack Flutter startup failed:', error);
+      showStartupError('Uygulama başlatılamadı. Yeniden deneyin.', detail);
+    }
   },
 });
