@@ -40,10 +40,13 @@ const pwaUpdater = await readFile(
   new URL('../web/pwa_update.js', import.meta.url),
   'utf8',
 );
-assert.match(pwaUpdater, /waiting\.postMessage\(\{ type: 'SKIP_WAITING' \}\)/);
+assert.match(pwaUpdater, /pendingRegistration\?\.waiting\?\.postMessage\(\{ type: 'SKIP_WAITING' \}\)/);
 assert.match(pwaUpdater, /isTextEditor\(document\.activeElement\)/);
 assert.match(pwaUpdater, /hadControllerAtStartup = Boolean\(navigator\.serviceWorker\.controller\)/);
 assert.match(pwaUpdater, /if \(!hadControllerAtStartup\)/);
+assert.match(pwaUpdater, /Yeni MindTrack sürümü hazır/);
+assert.match(pwaUpdater, /reloadAfterUpdate = true/);
+assert.match(pwaUpdater, /Önce açık alanı kaydedin/);
 assert.doesNotMatch(pwaUpdater, /window\.confirm/);
 const psychologistPage = await readFile(
   new URL('../web/index_psychologist.html', import.meta.url),

@@ -24,6 +24,8 @@ class _PlanEditorDialogState extends State<PlanEditorDialog> {
   late final TextEditingController _interventions;
   late final List<_GoalDraft> _goals;
   String? _error;
+  bool _dirty = false;
+  bool _allowPop = false;
 
   @override
   void initState() {
@@ -33,6 +35,9 @@ class _PlanEditorDialogState extends State<PlanEditorDialog> {
     _desc = TextEditingController(text: p?.description ?? '');
     _interventions = TextEditingController(
         text: (p?.interventions ?? []).join('\n'));
+    for (final controller in [_title, _desc, _interventions]) {
+      controller.addListener(_markDirty);
+    }
     _goals = [
       for (final g in p?.goals ?? <Goal>[])
         _GoalDraft(
@@ -43,6 +48,44 @@ class _PlanEditorDialogState extends State<PlanEditorDialog> {
           targetDate: g.targetDate ?? '',
         ),
     ];
+  }
+
+  void _markDirty() {
+    if (_dirty || !mounted) return;
+    setState(() => _dirty = true);
+  }
+
+  void _closeWith(Object? result) {
+    if (!mounted) return;
+    setState(() => _allowPop = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Navigator.of(context).pop(result);
+    });
+  }
+
+  Future<bool> _confirmDiscard() async {
+    if (!_dirty) return true;
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Kaydedilmemiş değişiklik'),
+            content: const Text(
+              'Bu tedavi planında kaydedilmemiş değişiklikler var. Çıkarsanız '
+              'değişiklikler kaybolur.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Vazgeç'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('Yine de çık'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 
   @override
@@ -64,6 +107,7 @@ class _PlanEditorDialogState extends State<PlanEditorDialog> {
     );
     if (picked != null) {
       setState(() {
+        _dirty = true;
         g.targetDate = '${picked.year.toString().padLeft(4, '0')}-'
             '${picked.month.toString().padLeft(2, '0')}-'
             '${picked.day.toString().padLeft(2, '0')}';
@@ -124,12 +168,18 @@ class _PlanEditorDialogState extends State<PlanEditorDialog> {
       ));
     }
     widget.data.save();
-    Navigator.of(context).pop(true);
+    _closeWith(true);
   }
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
+    return PopScope(
+      canPop: _allowPop || !_dirty,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        if (await _confirmDiscard()) _closeWith(result);
+      },
+      child: Dialog(
       insetPadding: const EdgeInsets.all(16),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.radius)),
       child: ConstrainedBox(
@@ -165,7 +215,9 @@ class _PlanEditorDialogState extends State<PlanEditorDialog> {
                   ),
                   IconButton(
                     tooltip: 'Kapat',
-                    onPressed: () => Navigator.of(context).pop(false),
+                    onPressed: () async {
+                      if (await _confirmDiscard()) _closeWith(false);
+                    },
                     icon: const Icon(Icons.close, color: AppColors.muted),
                   ),
                 ],
@@ -208,6 +260,7 @@ class _PlanEditorDialogState extends State<PlanEditorDialog> {
                         ),
                         OutlinedButton.icon(
                           onPressed: () => setState(() {
+                            _dirty = true;
                             _goals.add(_GoalDraft(
                                 id: widget.data.newId()));
                           }),
@@ -284,7 +337,9 @@ class _PlanEditorDialogState extends State<PlanEditorDialog> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
-                    onPressed: () => Navigator.of(context).pop(false),
+                onPressed: () async {
+                  if (await _confirmDiscard()) _closeWith(false);
+                },
                     child: const Text('İptal',
                         style: TextStyle()),
                   ),
@@ -300,6 +355,7 @@ class _PlanEditorDialogState extends State<PlanEditorDialog> {
             ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -346,7 +402,10 @@ class _PlanEditorDialogState extends State<PlanEditorDialog> {
               IconButton(
                 tooltip: 'Sil',
                 visualDensity: VisualDensity.compact,
-                onPressed: () => setState(() => _goals.removeAt(i)),
+                onPressed: () => setState(() {
+                  _dirty = true;
+                  _goals.removeAt(i);
+                }),
                 icon: const Icon(Icons.delete_outline,
                     size: 18, color: AppColors.danger),
               ),
@@ -380,7 +439,10 @@ class _PlanEditorDialogState extends State<PlanEditorDialog> {
                     DropdownMenuItem(
                         value: 'long', child: Text('Uzun Vade')),
                   ],
-                  onChanged: (v) => setState(() => g.category = v ?? 'short'),
+                  onChanged: (v) => setState(() {
+                    _dirty = true;
+                    g.category = v ?? 'short';
+                  }),
                 ),
               ),
               const SizedBox(width: 10),
@@ -402,7 +464,10 @@ class _PlanEditorDialogState extends State<PlanEditorDialog> {
                     DropdownMenuItem(
                         value: 'dropped', child: Text('Bırakıldı')),
                   ],
-                  onChanged: (v) => setState(() => g.status = v ?? 'pending'),
+                  onChanged: (v) => setState(() {
+                    _dirty = true;
+                    g.status = v ?? 'pending';
+                  }),
                 ),
               ),
               const SizedBox(width: 10),

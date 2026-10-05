@@ -32,6 +32,8 @@ class _ClientEditDialogState extends State<ClientEditDialog> {
   late final List<String> _diagnosisCodes;
   String? _error;
   bool _saving = false;
+  bool _dirty = false;
+  bool _allowPop = false;
 
   @override
   void initState() {
@@ -50,10 +52,51 @@ class _ClientEditDialogState extends State<ClientEditDialog> {
     );
     _tags = TextEditingController(text: (c?.tags ?? []).join(', '));
     _notes = TextEditingController(text: c?.notes ?? '');
+    for (final controller in [_name, _email, _phone, _sessionFee, _tags, _notes]) {
+      controller.addListener(_markDirty);
+    }
     _birthDate = c?.birthDate ?? '';
     _gender = c?.gender ?? '';
     _status = c?.status ?? 'active';
     _diagnosisCodes = List.of(c?.diagnosisCodes ?? const <String>[]);
+  }
+
+  void _markDirty() {
+    if (_dirty || !mounted) return;
+    setState(() => _dirty = true);
+  }
+
+  void _closeWith(Object? result) {
+    if (!mounted) return;
+    setState(() => _allowPop = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Navigator.of(context).pop(result);
+    });
+  }
+
+  Future<bool> _confirmDiscard() async {
+    if (!_dirty || _saving) return true;
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Kaydedilmemiş değişiklik'),
+            content: const Text(
+              'Bu danışan kaydında kaydedilmemiş değişiklikler var. Çıkarsanız '
+              'değişiklikler kaybolur.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Vazgeç'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('Yine de çık'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 
   @override
@@ -85,6 +128,7 @@ class _ClientEditDialogState extends State<ClientEditDialog> {
     );
     if (picked != null) {
       setState(() {
+        _dirty = true;
         _birthDate =
             '${picked.year.toString().padLeft(4, '0')}-'
             '${picked.month.toString().padLeft(2, '0')}-'
@@ -185,7 +229,7 @@ class _ClientEditDialogState extends State<ClientEditDialog> {
         }
         return;
       }
-      if (mounted) Navigator.of(context).pop(true);
+      if (mounted) _closeWith(true);
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -198,6 +242,7 @@ class _ClientEditDialogState extends State<ClientEditDialog> {
     );
     if (result != null) {
       setState(() {
+        _dirty = true;
         _diagnosisCodes
           ..clear()
           ..addAll(result);
@@ -207,7 +252,13 @@ class _ClientEditDialogState extends State<ClientEditDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
+    return PopScope(
+      canPop: _allowPop || !_dirty,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        if (await _confirmDiscard()) _closeWith(result);
+      },
+      child: Dialog(
       insetPadding: const EdgeInsets.all(16),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppSizes.radius),
@@ -234,7 +285,9 @@ class _ClientEditDialogState extends State<ClientEditDialog> {
                   ),
                   IconButton(
                     tooltip: 'Kapat',
-                    onPressed: () => Navigator.of(context).pop(false),
+                    onPressed: () async {
+                      if (await _confirmDiscard()) _closeWith(false);
+                    },
                     icon: const Icon(Icons.close, color: AppColors.muted),
                   ),
                 ],
@@ -340,7 +393,10 @@ class _ClientEditDialogState extends State<ClientEditDialog> {
                                 child: Text('Belirtmek istemiyorum'),
                               ),
                             ],
-                            onChanged: (v) => setState(() => _gender = v ?? ''),
+                            onChanged: (v) => setState(() {
+                              _dirty = true;
+                              _gender = v ?? '';
+                            }),
                           ),
                         ),
                       ],
@@ -391,7 +447,10 @@ class _ClientEditDialogState extends State<ClientEditDialog> {
                           child: Text('Arşivlendi'),
                         ),
                       ],
-                      onChanged: (v) => setState(() => _status = v ?? 'active'),
+                      onChanged: (v) => setState(() {
+                        _dirty = true;
+                        _status = v ?? 'active';
+                      }),
                     ),
                     const SizedBox(height: 12),
                     _diagnosisSection(),
@@ -444,7 +503,9 @@ class _ClientEditDialogState extends State<ClientEditDialog> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
-                    onPressed: () => Navigator.of(context).pop(false),
+                    onPressed: () async {
+                      if (await _confirmDiscard()) _closeWith(false);
+                    },
                     child: const Text('İptal', style: TextStyle()),
                   ),
                   const SizedBox(width: 8),
@@ -458,6 +519,7 @@ class _ClientEditDialogState extends State<ClientEditDialog> {
             ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -514,7 +576,10 @@ class _ClientEditDialogState extends State<ClientEditDialog> {
                       child: InputChip(
                         label: Text(code, style: const TextStyle(fontSize: 11)),
                         onDeleted: () =>
-                            setState(() => _diagnosisCodes.remove(code)),
+                            setState(() {
+                              _dirty = true;
+                              _diagnosisCodes.remove(code);
+                            }),
                       ),
                     ),
                 ],
