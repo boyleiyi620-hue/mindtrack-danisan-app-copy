@@ -4,6 +4,7 @@ import 'package:mindtrack_danisan_app/data/binary_blobs.dart';
 import 'package:mindtrack_danisan_app/data/crypto_utils.dart';
 import 'package:mindtrack_danisan_app/data/data_store.dart';
 import 'package:mindtrack_danisan_app/data/sync_status.dart';
+import 'package:mindtrack_danisan_app/models/app_data.dart';
 import 'package:mindtrack_danisan_app/models/client.dart';
 import 'package:mindtrack_danisan_app/models/user_account.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -149,6 +150,30 @@ void main() {
     expect(payload['pdfFiles'][0]['dataUrl'], isEmpty);
     expect(payload['pdfFiles'][1]['dataUrl'], 'pending-body');
     expect(payload['documents'][0]['dataUrl'], isEmpty);
+  });
+
+  test('yedek geri yüklemeden önce mevcut snapshot kurtarılır', () async {
+    final accounts = await AccountStore.init();
+    final user = _account('restore-protection', 'restore@example.com');
+    accounts.setSession(user);
+    final data = DataStore(accounts);
+    data.data.clients.add(Client(id: 'before', name: 'Geri alınmadan önce'));
+    data.save();
+    await data.flushLocalWrites();
+
+    await data.restoreFromBackup(
+      AppData(clients: [Client(id: 'after', name: 'Yedekten gelen')]),
+    );
+    await data.flushLocalWrites();
+
+    expect(data.data.clients.single.name, 'Yedekten gelen');
+    final prefs = await SharedPreferences.getInstance();
+    expect(
+      prefs.getKeys().where(
+        (key) => key.startsWith('${accounts.dataKey(user)}_before_restore_'),
+      ),
+      isNotEmpty,
+    );
   });
 
   test('storage yolu olmayan belgeler yükleme kuyruğuna alınır', () {
