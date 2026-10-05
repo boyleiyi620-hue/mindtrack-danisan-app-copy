@@ -94,7 +94,7 @@ class BlobStore {
     if (legacy == null) return null;
     // Eski kayıt bulundu: belleğe al ve IndexedDB'ye taşı.
     _cache[key] = legacy;
-    unawaited(_persist(key, legacy));
+    unawaited(_persist(key, legacy).catchError((Object _) {}));
     return legacy;
   }
 
@@ -133,11 +133,8 @@ class BlobStore {
         _db = null;
       }
     }
-    try {
-      final legacy = _legacy ??= await SharedPreferences.getInstance();
-      await legacy.setString(key, value);
-    } catch (_) {
-      // Son çare: veri bellekte durur, uygulama açıkken kaybolmaz.
-    }
+    final legacy = _legacy ??= await SharedPreferences.getInstance();
+    final saved = await legacy.setString(key, value);
+    if (!saved) throw StateError('Tarayıcı yerel depolaması yazmayı reddetti.');
   }
 }

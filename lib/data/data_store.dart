@@ -32,13 +32,17 @@ class DataStore extends ChangeNotifier {
   bool _remoteLoading = false;
   bool _remoteSaving = false;
   String? _pendingRemoteEncoded;
+  int? _pendingRemoteRevision;
+  UserAccount? _pendingRemoteUser;
   Timer? _remoteSaveTimer;
   StreamSubscription<Map<String, dynamic>?>? _remoteSubscription;
+  Future<void> _localSaveChain = Future<void>.value();
+  int _saveRevision = 0;
+  int _persistedRevision = 0;
 
   // --- Kalıcı senkronizasyon durumu ---------------------------------------
-  // Uzak yazma başarısız olduğunda veri kaybolmasın diye "kirli" işareti
-  // diske yazılır; uygulama kapansa bile uzak kopyanın eksik kalmadığı
-  // garanti edilir ve bir sonraki açılışta kaldığı yerden sürdürülür.
+  // Uzak yazma başarısız olduğunda yerel snapshot diske alınır ve "kirli"
+  // işareti korunur; sonraki açılışta yeniden senkronizasyon başlatılır.
   SyncPhase _phase = SyncPhase.idle;
   int _failures = 0;
   DateTime? _lastSyncedAt;
@@ -222,24 +226,42 @@ class DataStore extends ChangeNotifier {
     if (u == null) return;
     deduplicateClientsByEmail();
     final encoded = jsonEncode(data.toJson());
-    unawaited(BlobStore.instance.set(accounts.dataKey(u), encoded));
-    _markDirty(u);
+    final revision = ++_saveRevision;
+    // Persist the dirty marker before the data snapshot. If the tab closes
+    // between writes, the next launch still knows a remote sync is required.
+    final dirtyWrite = _markDirty(u);
     if (_phase == SyncPhase.idle) _phase = SyncPhase.pending;
     notifyListeners();
-    // Release web/mobil sürümünde bir ekranda art arda yapılan küçük
-    // değişiklikleri tek uzak yazmada birleştir. Yerel kayıt anında tamamlanır;
-    // Supabase'e gereksiz istek yağmuru gönderilmez. Debug/test akışında ise
-    // gecikmeli timer bırakmayarak widget testlerinin temiz kapanmasını koru.
-    _remoteSaveTimer?.cancel();
-    if (kReleaseMode) {
-      _remoteSaveTimer = Timer(const Duration(milliseconds: 450), () {
-        _remoteSaveTimer = null;
-        _saveRemote(encoded);
-      });
-    } else {
-      _saveRemote(encoded);
-    }
+    final localWrite = _localSaveChain.then((_) async {
+      await dirtyWrite;
+      await BlobStore.instance.set(accounts.dataKey(u), encoded);
+      _persistedRevision = revision;
+      // A user switch while IndexedDB is writing must not upload this snapshot
+      // to whichever account happens to be active when the write completes.
+      if (accounts.current?.id != u.id || _disposed) return;
+
+      // Debounce rapid edits only after the latest snapshot is safely local.
+      _remoteSaveTimer?.cancel();
+      if (kReleaseMode) {
+        _remoteSaveTimer = Timer(const Duration(milliseconds: 450), () {
+          _remoteSaveTimer = null;
+          unawaited(_saveRemote(encoded, revision: revision, user: u));
+        });
+      } else {
+        await _saveRemote(encoded, revision: revision, user: u);
+      }
+    });
+    _localSaveChain = localWrite.catchError((Object error) {
+      if (revision == _saveRevision) {
+        _onRemoteFailed(
+          StateError('Yerel kayıt tamamlanamadı: ${_describeSyncError(error)}'),
+        );
+      }
+    });
   }
+
+  /// Wait until queued local snapshots are durable (used by tests/lifecycle).
+  Future<void> flushLocalWrites() => _localSaveChain;
 
   /// Psikolog takvimindeki durum değişikliğini ortak Supabase randevusuna da
   /// yazar. Ortak olmayan eski randevular için yardımcı işlem yapmadan döner;
@@ -259,12 +281,26 @@ class DataStore extends ChangeNotifier {
     }
   }
 
-  Future<void> _saveRemote(String encoded) async {
+  Future<void> _saveRemote(
+    String encoded, {
+    int? revision,
+    UserAccount? user,
+  }) async {
     // Arka arkaya gelen işlemlerden hiçbiri kaybolmasın: yeni kayıt, devam eden
     // uzak yazmanın arkasında kuyruğa alınır ve son durum ayrıca yazılır.
     _pendingRemoteEncoded = encoded;
-    final u = accounts.current;
-    if (u != null) _markDirty(u);
+    _pendingRemoteRevision = revision ?? _saveRevision;
+    _pendingRemoteUser = user ?? accounts.current;
+    final u = _pendingRemoteUser;
+    if (u != null) {
+      try {
+        await _markDirty(u);
+      } catch (error) {
+        _onRemoteFailed(error);
+        return;
+      }
+      if (accounts.current?.id != u.id) return;
+    }
     if (_remoteSaving) return;
 
     _remoteSaving = true;
@@ -274,7 +310,11 @@ class DataStore extends ChangeNotifier {
     try {
       while (_pendingRemoteEncoded != null) {
         final payload = _pendingRemoteEncoded!;
+        final payloadRevision = _pendingRemoteRevision ?? _saveRevision;
+        final payloadUser = _pendingRemoteUser;
         _pendingRemoteEncoded = null;
+        _pendingRemoteRevision = null;
+        _pendingRemoteUser = null;
         final backend = MindTrackBackend.instance;
         if (!backend.isSignedIn) {
           // Oturum yoksa veri kirli kalır; giriş olunca sürdürülür.
@@ -287,7 +327,7 @@ class DataStore extends ChangeNotifier {
           // dolar ve (eski sürümdeki gibi) senkron tümüyle durur.
           final slim = await _slimForRemote(payload);
           await backend.saveState(slim);
-          _onRemoteSaved();
+          await _onRemoteSaved(payloadRevision, payloadUser);
         } catch (error) {
           _onRemoteFailed(error);
           break;
@@ -301,19 +341,37 @@ class DataStore extends ChangeNotifier {
   // ---------------- kalıcı senkronizasyon durumu ----------------
 
   /// Başarılı yazma sonrası: sıradaki iş kalmadıysa durum temizlenir.
-  void _onRemoteSaved() {
+  Future<void> _onRemoteSaved(int revision, UserAccount? syncedUser) async {
     _failures = 0;
     _lastSyncedAt = DateTime.now();
     _lastErrorAt = null;
     _syncMessage = null;
-    final u = accounts.current;
-    if (u != null) {
-      _prefs.setBool(_dirtyKey(u), false);
-      _prefs.setDouble(_syncedAtKey(u),
-          _lastSyncedAt!.millisecondsSinceEpoch.toDouble());
+    final u = syncedUser;
+    final isLatestDurableRevision =
+        u != null &&
+        revision == _saveRevision &&
+        revision <= _persistedRevision &&
+        _pendingRemoteEncoded == null;
+    if (isLatestDurableRevision) {
+      final cleared = await _prefs.setBool(_dirtyKey(u), false);
+      if (!cleared) {
+        throw StateError('Senkron durumu yerel depoya yazılamadı.');
+      }
+      // A newer edit may have arrived while SharedPreferences was completing.
+      // Reassert the dirty bit so its persisted snapshot is retried on launch.
+      if (revision != _saveRevision || _pendingRemoteEncoded != null) {
+        await _markDirty(u);
+      } else {
+        await _prefs.setDouble(
+          _syncedAtKey(u),
+          _lastSyncedAt!.millisecondsSinceEpoch.toDouble(),
+        );
+      }
     }
     _setPhase(
-      _pendingRemoteEncoded != null ? SyncPhase.pending : SyncPhase.idle,
+      _pendingRemoteEncoded != null || revision != _saveRevision
+          ? SyncPhase.pending
+          : SyncPhase.idle,
     );
   }
 
@@ -346,12 +404,33 @@ class DataStore extends ChangeNotifier {
       _setPhase(SyncPhase.pending, message: 'Oturum bekleniyor');
       return;
     }
-    await _saveRemote(jsonEncode(data.toJson()));
+    await _localSaveChain;
+    if (_persistedRevision < _saveRevision) {
+      final user = accounts.current!;
+      try {
+        await _markDirty(user);
+        await BlobStore.instance.set(
+          accounts.dataKey(user),
+          jsonEncode(data.toJson()),
+        );
+        _persistedRevision = _saveRevision;
+      } catch (error) {
+        _onRemoteFailed(error);
+        return;
+      }
+    }
+    await _saveRemote(
+      jsonEncode(data.toJson()),
+      revision: _saveRevision,
+      user: accounts.current,
+    );
   }
 
   /// Yerel veride sunucuya gitmemiş değişiklik olduğunu diske yazar.
-  void _markDirty(UserAccount u) =>
-      _prefs.setBool(_dirtyKey(u), true);
+  Future<void> _markDirty(UserAccount u) async {
+    final saved = await _prefs.setBool(_dirtyKey(u), true);
+    if (!saved) throw StateError('Bekleyen kayıt işareti yazılamadı.');
+  }
 
   /// Önceki oturumdan yarım kalmış yazmayı sürdürür.
   void _resumePendingSync() {
@@ -359,7 +438,31 @@ class DataStore extends ChangeNotifier {
     if (u == null || _disposed) return;
     if (!(_prefs.getBool(_dirtyKey(u)) ?? false)) return;
     if (!MindTrackBackend.instance.isSignedIn) return;
-    _saveRemote(jsonEncode(data.toJson()));
+    unawaited(_resumePendingSyncAfterLocalWrites(u));
+  }
+
+  Future<void> _resumePendingSyncAfterLocalWrites(UserAccount user) async {
+    await _localSaveChain;
+    if (_disposed || accounts.current?.id != user.id) return;
+    if (!(_prefs.getBool(_dirtyKey(user)) ?? false)) return;
+    if (_persistedRevision < _saveRevision) {
+      try {
+        await _markDirty(user);
+        await BlobStore.instance.set(
+          accounts.dataKey(user),
+          jsonEncode(data.toJson()),
+        );
+        _persistedRevision = _saveRevision;
+      } catch (error) {
+        _onRemoteFailed(error);
+        return;
+      }
+    }
+    await _saveRemote(
+      jsonEncode(data.toJson()),
+      revision: _saveRevision,
+      user: user,
+    );
   }
 
   /// Sunucuya yazılmamış yerel değişiklik var mı?

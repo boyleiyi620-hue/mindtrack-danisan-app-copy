@@ -32,6 +32,7 @@ void main() {
 
     data.data.clients.add(Client(id: 'c1', name: 'Danışan'));
     data.save();
+    await data.flushLocalWrites();
 
     // Sunucu bağlantısı olmadığı için veri diske yazılır ama uzağa gidemez.
     expect(data.hasUnsyncedChanges, isTrue);
@@ -44,7 +45,7 @@ void main() {
 
     data.data.clients.add(Client(id: 'c1', name: 'Danışan'));
     data.save();
-    await Future<void>.delayed(Duration.zero);
+    await data.flushLocalWrites();
 
     expect(data.syncStatus.phase, SyncPhase.pending);
     expect(data.syncStatus.hasPendingWork, isTrue);
@@ -57,6 +58,7 @@ void main() {
 
     first.data.clients.add(Client(id: 'c1', name: 'Danışan'));
     first.save();
+    await first.flushLocalWrites();
     expect(first.hasUnsyncedChanges, isTrue);
 
     // Aynı hesapla yeni bir depo kurulur: uygulama yeniden açılmış gibi.
@@ -71,6 +73,7 @@ void main() {
     final first = DataStore(accounts);
     first.data.clients.add(Client(id: 'c1', name: 'A'));
     first.save();
+    await first.flushLocalWrites();
     expect(first.hasUnsyncedChanges, isTrue);
 
     accounts.setSession(_account('queue-user-b', 'b@example.com'));
@@ -80,6 +83,25 @@ void main() {
     accounts.setSession(_account('queue-user-a', 'a@example.com'));
     expect(DataStore(accounts).hasUnsyncedChanges, isTrue);
   });
+
+  test(
+    'hızlı ardışık kayıtlar yeniden açılışta en yeni anlık görüntüyü korur',
+    () async {
+      final accounts = await AccountStore.init();
+      accounts.setSession(_account('queue-latest', 'latest@example.com'));
+      final data = DataStore(accounts);
+
+      data.data.clients.add(Client(id: 'c1', name: 'İlk kayıt'));
+      data.save();
+      data.data.clients.single.name = 'En yeni kayıt';
+      data.save();
+      await data.flushLocalWrites();
+
+      final reopened = DataStore(accounts);
+      expect(reopened.data.clients.single.name, 'En yeni kayıt');
+      expect(reopened.hasUnsyncedChanges, isTrue);
+    },
+  );
 
   test('yeniden deneme sunucu yokken çevrimdışı gösterir', () async {
     final accounts = await AccountStore.init();
@@ -101,6 +123,7 @@ void main() {
     final data = DataStore(accounts);
     data.data.clients.add(Client(id: 'c1', name: 'Danışan'));
     data.save();
+    await data.flushLocalWrites();
 
     accounts.clearSession();
 
