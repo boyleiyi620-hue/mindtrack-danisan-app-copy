@@ -14,6 +14,9 @@ class UserAccount {
   double createdAt;
   String appMode; // 'standard', 'commercial', 'training'
   double defaultSessionFee;
+  /// Klinik tenant bağlantısı; eski tek-kullanıcı hesaplarında boş kalabilir.
+  String? organizationId;
+  String organizationRole; // 'admin', 'psychologist', 'assistant'
 
   UserAccount({
     required this.id,
@@ -28,6 +31,8 @@ class UserAccount {
     required this.createdAt,
     this.appMode = 'standard',
     this.defaultSessionFee = 0.0,
+    this.organizationId,
+    this.organizationRole = 'psychologist',
   });
 
   bool get hasPin => pinHash != null && pinHash!.isNotEmpty;
@@ -45,6 +50,8 @@ class UserAccount {
         'createdAt': createdAt,
         'appMode': appMode,
         'defaultSessionFee': defaultSessionFee,
+        'organizationId': organizationId,
+        'organizationRole': organizationRole,
       };
 
   factory UserAccount.fromJson(Map<String, dynamic> j) => UserAccount(
@@ -60,6 +67,8 @@ class UserAccount {
         createdAt: (j['createdAt'] as num?)?.toDouble() ?? 0,
         appMode: j['appMode'] as String? ?? 'standard',
         defaultSessionFee: (j['defaultSessionFee'] as num?)?.toDouble() ?? 0.0,
+        organizationId: j['organizationId'] as String?,
+        organizationRole: j['organizationRole'] as String? ?? 'psychologist',
       );
 
   String toJsonString() => jsonEncode(toJson());

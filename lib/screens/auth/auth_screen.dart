@@ -73,6 +73,7 @@ class _AuthScreenState extends State<AuthScreen> {
       widget.store.addUser(user);
     }
     widget.store.setSession(user);
+    await _attachOrganization(user);
     widget.data.load();
     await widget.data.startRemoteSync();
     if (mounted) _goHome();
@@ -141,6 +142,7 @@ class _AuthScreenState extends State<AuthScreen> {
       widget.store.addUser(u);
     }
     widget.store.setSession(u);
+    await _attachOrganization(u);
     widget.data.load();
     await widget.data.startRemoteSync();
     if (mounted) _goHome();
@@ -270,6 +272,7 @@ class _AuthScreenState extends State<AuthScreen> {
     }
     widget.store.addUser(u);
     widget.store.setSession(u);
+    await _attachOrganization(u);
     widget.data.load();
     await widget.data.startRemoteSync();
     if (mounted) _goHome();
@@ -287,6 +290,16 @@ class _AuthScreenState extends State<AuthScreen> {
         ),
       );
     });
+  }
+
+  Future<void> _attachOrganization(UserAccount user) async {
+    final membership = await MindTrackBackend.instance.ensurePersonalOrganization(
+      fallbackName: user.clinic.isNotEmpty ? user.clinic : user.name,
+    );
+    if (membership == null) return;
+    user.organizationId = membership.organizationId;
+    user.organizationRole = membership.role;
+    widget.store.updateUser(user);
   }
 
   @override

@@ -11,8 +11,25 @@ import 'package:mindtrack_danisan_app/models/note.dart';
 import 'package:mindtrack_danisan_app/models/pdf_library.dart';
 import 'package:mindtrack_danisan_app/models/plan.dart';
 import 'package:mindtrack_danisan_app/models/task.dart';
+import 'package:mindtrack_danisan_app/models/user_account.dart';
 
 void main() {
+  test('eski hesaplar klinik alanları olmadan da açılır', () {
+    final account = UserAccount.fromJson({
+      'id': 'u1',
+      'name': 'Psikolog',
+      'email': 'p@example.com',
+      'salt': 's',
+      'pwdHash': 'h',
+      'createdAt': 1,
+    });
+
+    expect(account.organizationId, isNull);
+    expect(account.organizationRole, 'psychologist');
+    expect(UserAccount.fromJson(account.toJson()).organizationRole,
+        'psychologist');
+  });
+
   test('uzak ve yerel kayıtlar birleştirilirken kayıt kaybı olmaz', () {
     final remote = AppData(
       clients: [Client(id: 'remote', name: 'Uzak')],

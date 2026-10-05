@@ -120,6 +120,48 @@ class MindTrackBackend {
     await _guard(() async => _db.auth.signOut());
   }
 
+  // ---------------------------------------------------------- klinik üyeliği -
+
+  /// Kullanıcının aktif klinik üyeliğini döndürür; eski kurulumlarda tenant
+  /// migration'ı henüz çalıştırılmadıysa null döner ve giriş engellenmez.
+  Future<OrganizationMembership?> ensurePersonalOrganization({
+    required String fallbackName,
+  }) async {
+    final uid = userId;
+    if (uid == null) return null;
+    try {
+      final existing = await _guard(() => _db
+          .from('memberships')
+          .select('organization_id, role, status')
+          .eq('user_id', uid)
+          .eq('status', 'active')
+          .order('created_at')
+          .limit(1)
+          .maybeSingle());
+      if (existing != null) {
+        return OrganizationMembership.fromJson(existing);
+      }
+      final name = fallbackName.trim().isEmpty
+          ? 'MindTrack Klinik'
+          : fallbackName.trim();
+      final created = await _guard(
+        () => _db.rpc('create_organization', params: {'p_name': name}),
+      );
+      final organizationId = created?.toString();
+      if (organizationId == null || organizationId.isEmpty) return null;
+      return OrganizationMembership(
+        organizationId: organizationId,
+        role: 'admin',
+        status: 'active',
+      );
+    } catch (error) {
+      // Tenant migration'ı henüz uygulanmamış canlı projede eski giriş akışı
+      // çalışmaya devam etmeli. Diğer bağlantı hataları da login'i kilitlemez;
+      // üyelik bir sonraki girişte tekrar denenir.
+      return null;
+    }
+  }
+
   // ------------------------------------------------ psikologun klinik kaydı ---
 
   /// Psikologun AppData'sının uzak kopyası. Psikologun tüm klinik kaydı
@@ -946,6 +988,25 @@ class StateConflictException extends BackendException {
           'Bu kayıt başka bir cihazda değiştirildi. Yerel değişiklikleriniz '
           'bu cihazda korundu; veri ezilmedi.',
         );
+}
+
+class OrganizationMembership {
+  const OrganizationMembership({
+    required this.organizationId,
+    required this.role,
+    required this.status,
+  });
+
+  final String organizationId;
+  final String role;
+  final String status;
+
+  factory OrganizationMembership.fromJson(Map<String, dynamic> json) =>
+      OrganizationMembership(
+        organizationId: json['organization_id'] as String,
+        role: json['role'] as String? ?? 'psychologist',
+        status: json['status'] as String? ?? 'active',
+      );
 }
 
 class RemoteStateSnapshot {
