@@ -90,8 +90,9 @@ class DataStore extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    final localKey = accounts.dataKey(u);
     try {
-      final raw = BlobStore.instance.get(accounts.dataKey(u));
+      final raw = BlobStore.instance.get(localKey);
       if (raw != null && raw.isNotEmpty) {
         data = AppData.fromJson(jsonDecode(raw) as Map<String, dynamic>);
         if (deduplicateClientsByEmail()) {
@@ -102,6 +103,16 @@ class DataStore extends ChangeNotifier {
         data = AppData.empty();
       }
     } catch (_) {
+      // Bozuk/yarım kalmış snapshot'ı silmek yerine kurtarma kopyası olarak
+      // sakla. Böylece açılışta veri kaybı yaşanırsa ham kayıt incelenebilir.
+      final raw = BlobStore.instance.get(localKey);
+      if (raw != null && raw.isNotEmpty) {
+        final recoveryKey =
+            '${localKey}_recovery_${DateTime.now().microsecondsSinceEpoch}';
+        unawaited(
+          BlobStore.instance.set(recoveryKey, raw).catchError((_) {}),
+        );
+      }
       data = AppData.empty();
     }
     _restoreSyncState(u);

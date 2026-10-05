@@ -738,13 +738,27 @@ class _SettingsTabState extends State<SettingsTab> {
     AppData restored;
     try {
       final decoded = jsonDecode(raw);
-      final map = decoded is Map<String, dynamic>
-          ? decoded
-          : Map<String, dynamic>.from(decoded as Map);
-      final source = map['format'] == 'mindtrack-backup'
-          ? map['data']
-          : map;
-      restored = AppData.fromJson(Map<String, dynamic>.from(source as Map));
+      if (decoded is! Map) {
+        throw const FormatException('JSON nesnesi bekleniyor.');
+      }
+      final map = Map<String, dynamic>.from(decoded);
+      late final Map<String, dynamic> source;
+      if (map['format'] == 'mindtrack-backup') {
+        if (map['version'] != 1 || map['data'] is! Map) {
+          throw const FormatException('Desteklenmeyen yedek sürümü.');
+        }
+        source = Map<String, dynamic>.from(map['data'] as Map);
+      } else {
+        const knownCollections = [
+          'clients', 'appointments', 'notes', 'forms', 'assessments',
+          'plans', 'tasks', 'documents', 'pdfCats', 'pdfFiles',
+        ];
+        if (!knownCollections.any(map.containsKey)) {
+          throw const FormatException('MindTrack kayıt alanı bulunamadı.');
+        }
+        source = map;
+      }
+      restored = AppData.fromJson(source);
     } catch (_) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
