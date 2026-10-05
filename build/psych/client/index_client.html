@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+  <link rel="preconnect" href="https://aqswdmhwqhrsempoiqfv.supabase.co" crossorigin>
+  <link rel="dns-prefetch" href="https://aqswdmhwqhrsempoiqfv.supabase.co">
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="MindTrack — danışanların formlarını ve randevularını takip edebildiği danışmanlık uygulaması.">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="MindTrack Danışan">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <title>MindTrack — Danışan Uygulaması</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="preload" href="main.dart.js" as="script">
+  <style>
+    #mindtrack-boot{position:fixed;z-index:2147482000;inset:0;display:grid;place-content:center;justify-items:center;gap:14px;background:#f8fbfb;color:#173c39;font:600 15px/1.4 system-ui,sans-serif}
+    #mindtrack-boot-spinner{width:34px;height:34px;border:3px solid #c9ddda;border-top-color:#347f76;border-radius:50%;animation:mindtrack-spin .8s linear infinite}
+    #mindtrack-boot-detail{max-width:min(90vw,540px);text-align:center;font:12px/1.45 ui-monospace,monospace;color:#52716d;overflow-wrap:anywhere}
+    #mindtrack-boot-retry{border:0;border-radius:8px;padding:10px 16px;background:#347f76;color:white;font:600 14px system-ui,sans-serif;cursor:pointer}
+    @keyframes mindtrack-spin{to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+  <div id="mindtrack-boot" role="status" aria-live="polite">
+    <span id="mindtrack-boot-spinner" aria-hidden="true"></span>
+    <span id="mindtrack-boot-message">MindTrack açılıyor…</span>
+    <span id="mindtrack-boot-detail" hidden></span>
+    <button id="mindtrack-boot-retry" type="button" hidden>Yeniden dene</button>
+  </div>
+  <script src="pwa_update.js"></script>
+  <script>
+    (() => {
+      const bootstrap = document.createElement('script');
+      bootstrap.src = 'flutter_bootstrap.js?mindtrack-build-20261005-r7';
+      bootstrap.onerror = () => {
+        document.getElementById('mindtrack-boot-message').textContent = 'Uygulama dosyaları yüklenemedi. İnternet bağlantınızı kontrol edip yeniden deneyin.';
+        document.getElementById('mindtrack-boot-retry').hidden = false;
+      };
+      bootstrap.async = true;
+      document.body.append(bootstrap);
+
+      // Let Flutter start immediately; install/update the PWA worker in the
+      // background so a slow worker registration cannot leave clients waiting.
+      if ('serviceWorker' in navigator) {
+        const marker = 'mindtrack-sw-network-v11';
+        navigator.serviceWorker.register(`flutter_service_worker.js?${marker}`)
+          .then((registration) => {
+            window.mindTrackWatchServiceWorker?.(registration);
+          })
+          .catch((error) => {
+            console.warn('MindTrack service worker update skipped:', error);
+          });
+      }
+    })();
+  </script>
+</body>
+</html>
