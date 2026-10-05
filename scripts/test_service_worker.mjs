@@ -12,6 +12,7 @@ assert.match(bootstrap, /canvasKitBaseUrl:\s*'canvaskit\/'/);
 assert.match(bootstrap, /mindtrack-boot/);
 assert.match(bootstrap, /mindtrack-boot-detail/);
 assert.match(bootstrap, /MindTrack startup error/);
+assert.match(bootstrap, /reason\?\.stack/);
 assert.match(bootstrap, /findVisibleCanvas\(document\)/);
 assert.match(bootstrap, /canvas\.width > 0 && canvas\.height > 0/);
 assert.match(bootstrap, /Uygulama başlatılamadı/);
@@ -24,7 +25,7 @@ for (const page of ['index.html', 'index_client.html', 'index_psychologist.html'
   const html = await readFile(new URL(`../web/${page}`, import.meta.url), 'utf8');
   assert.match(html, /id="mindtrack-boot"/);
   assert.match(html, /id="mindtrack-boot-detail"/);
-  assert.match(html, /mindtrack-sw-network-v10/);
+  assert.match(html, /mindtrack-sw-network-v11/);
   assert.match(html, /bootstrap\.onerror/);
   assert.match(html, /rel="preload" href="main\.dart\.js" as="script"/);
   assert.doesNotMatch(html, /navigator\.serviceWorker\.ready/);

@@ -64,7 +64,7 @@ function showStartupError(message, detail = '') {
   window.clearTimeout(retryTimer);
   if (bootMessage) bootMessage.textContent = message;
   if (bootDetail) {
-    bootDetail.textContent = detail.slice(0, 180);
+    bootDetail.textContent = detail.slice(0, 600);
     bootDetail.hidden = !detail;
   }
   if (retryButton) retryButton.hidden = false;
@@ -75,13 +75,13 @@ window.addEventListener('error', (event) => {
   const failedScript = target instanceof HTMLScriptElement
     ? new URL(target.src, document.baseURI).pathname.split('/').pop()
     : '';
-  const detail = failedScript || event.error?.message || event.message || '';
+  const detail = failedScript || event.error?.stack || event.error?.message || event.message || '';
   console.error('MindTrack startup error:', detail, event.error ?? target);
   showStartupError('Uygulama yüklenemedi. Bağlantınızı kontrol edip yeniden deneyin.', detail);
 });
 window.addEventListener('unhandledrejection', (event) => {
   const reason = event.reason;
-  const detail = reason instanceof Error ? reason.message : String(reason ?? '');
+  const detail = reason?.stack || (reason instanceof Error ? reason.message : String(reason ?? ''));
   console.error('MindTrack startup rejection:', reason);
   showStartupError('Uygulama başlatılamadı. Yeniden deneyin.', detail);
 });
