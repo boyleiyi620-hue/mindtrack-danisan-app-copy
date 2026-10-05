@@ -14,7 +14,9 @@ assert.match(bootstrap, /findVisibleCanvas\(document\)/);
 assert.match(bootstrap, /canvas\.width > 0 && canvas\.height > 0/);
 assert.match(bootstrap, /Uygulama başlatılamadı/);
 assert.doesNotMatch(bootstrap, /https:\/\/www\.gstatic\.com\/flutter-canvaskit/);
-assert.doesNotMatch(bootstrap, /canvasKitForceCpuOnly\s*:\s*true/);
+assert.match(bootstrap, /canvasKitForceCpuOnly:\s*isTouchAndroid/);
+assert.match(bootstrap, /Android/);
+assert.match(bootstrap, /90000/);
 
 for (const page of ['index.html', 'index_client.html', 'index_psychologist.html']) {
   const html = await readFile(new URL(`../web/${page}`, import.meta.url), 'utf8');
@@ -29,6 +31,13 @@ const source = await readFile(
   new URL('../web/disable_flutter_service_worker.js', import.meta.url),
   'utf8',
 );
+const pwaUpdater = await readFile(
+  new URL('../web/pwa_update.js', import.meta.url),
+  'utf8',
+);
+assert.match(pwaUpdater, /waiting\.postMessage\(\{ type: 'SKIP_WAITING' \}\)/);
+assert.match(pwaUpdater, /isTextEditor\(document\.activeElement\)/);
+assert.doesNotMatch(pwaUpdater, /window\.confirm/);
 const handlers = new Map();
 let fetchCount = 0;
 let navigationCount = 0;

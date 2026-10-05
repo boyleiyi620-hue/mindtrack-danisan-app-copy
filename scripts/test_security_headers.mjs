@@ -54,6 +54,16 @@ assert.match(
   /connect-src [^;]*wss:\/\/\*\.supabase\.co/,
   'CSP must allow the Supabase Realtime websocket',
 );
+assert.match(
+  csp,
+  /connect-src [^;]*https:\/\/fonts\.gstatic\.com/,
+  'CSP must allow Flutter web font fallback requests',
+);
+assert.match(
+  csp,
+  /font-src [^;]*https:\/\/fonts\.gstatic\.com/,
+  'CSP must allow the font fallback origin',
+);
 
 // --- Regresyon koruması ---------------------------------------------------
 
