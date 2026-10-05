@@ -18,9 +18,11 @@ assert.match(bootstrap, /reason\?\.stack/);
 assert.doesNotMatch(bootstrap, /findVisibleCanvas|firstCanvasTimer/);
 assert.match(bootstrap, /Uygulama başlatılamadı/);
 assert.doesNotMatch(bootstrap, /https:\/\/www\.gstatic\.com\/flutter-canvaskit/);
-// WebGL acceleration remains enabled on touch devices; forcing CanvasKit onto
-// the CPU made Android PWAs noticeably sluggish.
-assert.doesNotMatch(bootstrap, /canvasKitForceCpuOnly/);
+// WebGL acceleration remains enabled in normal Android Chrome/PWAs. Only
+// embedded WebViews receive the CPU fallback because their WebGL context is
+// less reliable.
+assert.match(bootstrap, /isAndroidWebView/);
+assert.match(bootstrap, /canvasKitForceCpuOnly:\s*true/);
 assert.doesNotMatch(bootstrap, /isTouchAndroid/);
 assert.match(bootstrap, /90000/);
 
