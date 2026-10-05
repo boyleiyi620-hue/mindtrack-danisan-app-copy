@@ -27,8 +27,13 @@ class AccountStore {
   /// okuma boş döner ve mevcut kayıt üzerine yazılabilir.
   static Future<AccountStore> init() async {
     final prefs = await SharedPreferences.getInstance();
+    final store = AccountStore(prefs);
     await BlobStore.instance.init();
-    return AccountStore(prefs);
+    final current = store.current;
+    if (current != null) {
+      await BlobStore.instance.preload(store.dataKey(current));
+    }
+    return store;
   }
 
   void _load() {

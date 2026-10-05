@@ -10,7 +10,8 @@
 //     SharedPreferences'a düşer — hiçbir ortamda veri kaybı olmaz.
 //  2. `localStorage`'da kalan eski kayıtlar ilk okumada şeffaf biçimde
 //     IndexedDB'ye taşınır; kullanıcı yükseltme sonrası verisini kaybetmez.
-//  3. Okuma bellekten senkron döner; IndexedDB hazır değilse alt satıra düşer.
+//  3. Yalnızca oturumdaki hesabın kaydı açılışta belleğe alınır; büyük
+//     IndexedDB depoları giriş ekranını bekletmez.
 import 'dart:async';
 
 import 'package:indexed_db/indexed_db.dart' as idb;
@@ -63,9 +64,25 @@ class BlobStore {
           }
         },
       );
-      await _loadAll();
     } catch (_) {
       _db = null;
+    }
+  }
+
+  /// DataStore okumadan önce yalnızca açık hesabın kaydını yükler.
+  /// Tüm anahtarları taramak, klinik kayıt büyüdükçe açılışı yavaşlatır.
+  Future<void> preload(String key) async {
+    if (_cache.containsKey(key)) return;
+    final db = _db;
+    if (db == null) return;
+    try {
+      final value = await db
+          .transaction(_storeName, 'readonly')
+          .objectStore(_storeName)
+          .getObject(key);
+      if (value is String) _cache[key] = value;
+    } catch (_) {
+      // Keep the existing localStorage fallback available through get().
     }
   }
 
@@ -121,24 +138,6 @@ class BlobStore {
       await legacy.setString(key, value);
     } catch (_) {
       // Son çare: veri bellekte durur, uygulama açıkken kaybolmaz.
-    }
-  }
-
-  /// Tüm kayıtları belleğe alır; böylece `get()` senkron çalışabilir.
-  Future<void> _loadAll() async {
-    final db = _db;
-    if (db == null) return;
-    try {
-      final transaction = db.transaction(_storeName, 'readonly');
-      final store = transaction.objectStore(_storeName);
-      await for (final cursor in store.openCursor()) {
-        final key = cursor.key;
-        final value = cursor.value;
-        if (key is String && value is String) _cache[key] = value;
-      }
-      await transaction.completed;
-    } catch (_) {
-      // Okuma başarısız olursa yazmalar yine de çalışır.
     }
   }
 }

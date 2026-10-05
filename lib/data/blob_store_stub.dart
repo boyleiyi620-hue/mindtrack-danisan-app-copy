@@ -21,6 +21,9 @@ class BlobStore {
     _ready = true;
   }
 
+  /// SharedPreferences doğrudan okunur; yerel platformlarda ön yükleme gerekmez.
+  Future<void> preload(String _) async {}
+
   /// Senkron okuma.
   String? get(String key) => _prefs?.getString(key);
 
