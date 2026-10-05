@@ -340,7 +340,7 @@ class _NoteEditorDialogState extends State<NoteEditorDialog> {
             ],
           ),
         ),
-      );
+      ),
     );
   }
 

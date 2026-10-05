@@ -25,7 +25,7 @@ void main() {
 
   test('yerel kayıt, sunucuya gönderilene kadar "kirli" sayılır', () async {
     final accounts = await AccountStore.init();
-    accounts.setSession(_account('u1', 'p@example.com'));
+    accounts.setSession(_account('queue-unsynced', 'unsynced@example.com'));
     final data = DataStore(accounts);
 
     expect(data.hasUnsyncedChanges, isFalse);
@@ -39,7 +39,7 @@ void main() {
 
   test('oturum yokken durum "bekliyor" olarak görünür', () async {
     final accounts = await AccountStore.init();
-    accounts.setSession(_account('u1', 'p@example.com'));
+    accounts.setSession(_account('queue-pending', 'pending@example.com'));
     final data = DataStore(accounts);
 
     data.data.clients.add(Client(id: 'c1', name: 'Danışan'));
@@ -52,7 +52,7 @@ void main() {
 
   test('kirli işareti uygulama yeniden açıldığında korunur', () async {
     final accounts = await AccountStore.init();
-    accounts.setSession(_account('u1', 'p@example.com'));
+    accounts.setSession(_account('queue-reopen', 'reopen@example.com'));
     final first = DataStore(accounts);
 
     first.data.clients.add(Client(id: 'c1', name: 'Danışan'));
@@ -67,23 +67,23 @@ void main() {
 
   test('başka kullanıcının kirli işareti diğerini etkilemez', () async {
     final accounts = await AccountStore.init();
-    accounts.setSession(_account('u1', 'a@example.com'));
+    accounts.setSession(_account('queue-user-a', 'a@example.com'));
     final first = DataStore(accounts);
     first.data.clients.add(Client(id: 'c1', name: 'A'));
     first.save();
     expect(first.hasUnsyncedChanges, isTrue);
 
-    accounts.setSession(_account('u2', 'b@example.com'));
+    accounts.setSession(_account('queue-user-b', 'b@example.com'));
     final second = DataStore(accounts);
     expect(second.hasUnsyncedChanges, isFalse);
 
-    accounts.setSession(_account('u1', 'a@example.com'));
+    accounts.setSession(_account('queue-user-a', 'a@example.com'));
     expect(DataStore(accounts).hasUnsyncedChanges, isTrue);
   });
 
   test('yeniden deneme sunucu yokken çevrimdışı gösterir', () async {
     final accounts = await AccountStore.init();
-    accounts.setSession(_account('u1', 'p@example.com'));
+    accounts.setSession(_account('queue-retry', 'retry@example.com'));
     final data = DataStore(accounts);
 
     await data.retrySyncNow();
@@ -97,14 +97,14 @@ void main() {
 
   test('oturum kapatılınca veri silinmez, işaret yerinde kalır', () async {
     final accounts = await AccountStore.init();
-    accounts.setSession(_account('u1', 'p@example.com'));
+    accounts.setSession(_account('queue-logout', 'logout@example.com'));
     final data = DataStore(accounts);
     data.data.clients.add(Client(id: 'c1', name: 'Danışan'));
     data.save();
 
     accounts.clearSession();
 
-    accounts.setSession(_account('u1', 'p@example.com'));
+    accounts.setSession(_account('queue-logout', 'logout@example.com'));
     final reopened = DataStore(accounts);
     expect(reopened.hasUnsyncedChanges, isTrue);
     expect(reopened.data.clients.single.name, 'Danışan');
