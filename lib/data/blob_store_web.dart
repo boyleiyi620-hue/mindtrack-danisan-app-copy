@@ -11,10 +11,9 @@
 //  2. `localStorage`'da kalan eski kayıtlar ilk okumada şeffaf biçimde
 //     IndexedDB'ye taşınır; kullanıcı yükseltme sonrası verisini kaybetmez.
 //  3. Okuma bellekten senkron döner; IndexedDB hazır değilse alt satıra düşer.
-// ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use
 import 'dart:async';
 
-import 'dart:html' as html;
+import 'package:indexed_db/indexed_db.dart' as idb;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class BlobStore {
@@ -24,7 +23,6 @@ class BlobStore {
 
   static const String _dbName = 'mindtrack_blobs';
   static const String _storeName = 'kv';
-  static const int _version = 1;
 
   /// Bellek önbelleği: `get()` senkron olabilsin diye.
   final Map<String, String> _cache = <String, String>{};
@@ -32,7 +30,7 @@ class BlobStore {
   /// `localStorage`'daki eski kopyalar; yalnızca geçiş ve yedek için okunur.
   SharedPreferences? _legacy;
 
-  html.Database? _db;
+  idb.Database? _db;
   bool _ready = false;
 
   Future<void> init() async {
@@ -44,10 +42,10 @@ class BlobStore {
       _legacy = null;
     }
     try {
-      final idb = html.window.indexedDB;
-      if (idb == null) return;
-      _db = await _open(idb);
-      if (_db != null) await _loadAll();
+      if (!idb.IdbFactory.supported) return;
+      final result = await idb.IdbFactory().openCreate(_dbName, _storeName);
+      _db = result.database;
+      await _loadAll();
     } catch (_) {
       _db = null;
     }
@@ -75,7 +73,10 @@ class BlobStore {
     final db = _db;
     if (db != null) {
       try {
-        db.transaction(_storeName, 'readwrite').objectStore(_storeName).delete(key);
+        await db
+            .transaction(_storeName, 'readwrite')
+            .objectStore(_storeName)
+            .delete(key);
       } catch (_) {
         // Yazılamadıysa eski kopyadan da silinmeli.
       }
@@ -88,7 +89,10 @@ class BlobStore {
     final db = _db;
     if (db != null) {
       try {
-        db.transaction(_storeName, 'readwrite').objectStore(_storeName).put(value, key);
+        await db
+            .transaction(_storeName, 'readwrite')
+            .objectStore(_storeName)
+            .put(value, key);
         return;
       } catch (_) {
         _db = null;
@@ -102,60 +106,19 @@ class BlobStore {
     }
   }
 
-  Future<html.Database?> _open(html.IdbFactory idb) async {
-    final completer = Completer<html.Database?>();
-    late html.IdbOpenDbRequest request;
-    try {
-      request = idb.open(_dbName, _version);
-    } catch (_) {
-      return null;
-    }
-    request.onUpgraded.listen((_) {
-      try {
-        final db = request.result;
-        if (!db.objectStoreNames.contains(_storeName)) {
-          db.createObjectStore(_storeName);
-        }
-      } catch (_) {
-        if (!completer.isCompleted) completer.complete(null);
-      }
-    });
-    request.onSuccess.listen((_) {
-      if (!completer.isCompleted) completer.complete(request.result);
-    });
-    request.onError.listen((_) {
-      if (!completer.isCompleted) completer.complete(null);
-    });
-    return completer.future;
-  }
-
   /// Tüm kayıtları belleğe alır; böylece `get()` senkron çalışabilir.
   Future<void> _loadAll() async {
     final db = _db;
     if (db == null) return;
     try {
-      final store = db.transaction(_storeName, 'readonly').objectStore(_storeName);
-      final request = store.openCursor();
-      final completer = Completer<void>();
-      request.onSuccess.listen((_) {
-        final cursor = request.result;
-        if (cursor == null) {
-          if (!completer.isCompleted) completer.complete();
-          return;
-        }
+      final transaction = db.transaction(_storeName, 'readonly');
+      final store = transaction.objectStore(_storeName);
+      await for (final cursor in store.openCursor()) {
         final key = cursor.key;
         final value = cursor.value;
         if (key is String && value is String) _cache[key] = value;
-        try {
-          cursor.next();
-        } catch (_) {
-          if (!completer.isCompleted) completer.complete();
-        }
-      });
-      request.onError.listen((_) {
-        if (!completer.isCompleted) completer.complete();
-      });
-      await completer.future;
+      }
+      await transaction.completed;
     } catch (_) {
       // Okuma başarısız olursa yazmalar yine de çalışır.
     }

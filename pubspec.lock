@@ -277,6 +277,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.1.2"
+  indexed_db:
+    dependency: "direct main"
+    description:
+      name: indexed_db
+      sha256: "80373b82188084c475ad6bac46dd09a2a1f665d3e2140d82e216d2e8e9504e31"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.1"
   intl:
     dependency: transitive
     description:
