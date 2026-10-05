@@ -275,13 +275,13 @@ class _LoginScreenState extends State<LoginScreen> {
                   icon: const Icon(Icons.account_circle_outlined),
                   label: const Text('Google ile devam et'),
                   style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 50),
+                    minimumSize: const Size(double.infinity, 50),
+                  ),
                 ),
                 TextButton.icon(
                   onPressed: _loading || _isReg ? null : _emailCodeLogin,
                   icon: const Icon(Icons.mark_email_read_outlined, size: 18),
                   label: const Text('Gmail kodu ile giriş yap'),
-                ),
                 ),
                 TextButton(
                   onPressed: () => setState(() => _isReg = !_isReg),
