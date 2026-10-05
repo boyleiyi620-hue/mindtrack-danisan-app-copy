@@ -47,10 +47,15 @@ const bootMessage = document.getElementById('mindtrack-boot-message');
 const retryButton = document.getElementById('mindtrack-boot-retry');
 const slowBootTimer = window.setTimeout(() => {
   if (bootMessage) {
-    bootMessage.textContent = 'Uygulama beklenenden uzun sürüyor. Bağlantınızı kontrol edin.';
+    bootMessage.textContent = 'İlk açılışta uygulama dosyaları yükleniyor. Lütfen sayfayı açık tutun.';
+  }
+}, 15000);
+const retryTimer = window.setTimeout(() => {
+  if (bootMessage) {
+    bootMessage.textContent = 'Açılış tamamlanamadı. İnternet bağlantınızı kontrol edip yeniden deneyin.';
   }
   if (retryButton) retryButton.hidden = false;
-}, 15000);
+}, 90000);
 
 retryButton?.addEventListener('click', () => window.location.reload());
 
@@ -83,6 +88,7 @@ const bootObserver = new MutationObserver(() => {
   firstCanvasTimer = window.setTimeout(() => {
     if (startupFailed) return;
     window.clearTimeout(slowBootTimer);
+    window.clearTimeout(retryTimer);
     bootSplash?.remove();
     bootObserver.disconnect();
   }, 1200);
@@ -93,6 +99,8 @@ function showStartupError(message) {
   if (!bootSplash?.isConnected) return;
   startupFailed = true;
   window.clearTimeout(firstCanvasTimer);
+  window.clearTimeout(slowBootTimer);
+  window.clearTimeout(retryTimer);
   if (bootMessage) bootMessage.textContent = message;
   if (retryButton) retryButton.hidden = false;
 }
