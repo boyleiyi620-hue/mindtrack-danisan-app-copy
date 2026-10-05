@@ -25,8 +25,17 @@ class _PsychologistBootstrapApp extends StatefulWidget {
 
 class _PsychologistBootstrapAppState
     extends State<_PsychologistBootstrapApp> {
-  late final Future<_PsychologistBootstrapResult> _initialization =
-      _initialize();
+  late Future<_PsychologistBootstrapResult> _initialization;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialization = _initialize();
+  }
+
+  void _retry() {
+    setState(() => _initialization = _initialize());
+  }
 
   Future<_PsychologistBootstrapResult> _initialize() async {
   final backendInitialization = () async {
@@ -58,7 +67,10 @@ class _PsychologistBootstrapAppState
       future: _initialization,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return const _StartupState();
+          return _StartupState(
+            error: true,
+            onRetry: _retry,
+          );
         }
         if (!snapshot.hasData) {
           return const _StartupState();
@@ -87,11 +99,14 @@ class _PsychologistBootstrapResult {
 }
 
 class _StartupState extends StatelessWidget {
-  const _StartupState();
+  const _StartupState({this.error = false, this.onRetry});
+
+  final bool error;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
+    return MaterialApp(
       debugShowCheckedModeBanner: false,
       home: Scaffold(
         backgroundColor: Color(0xFFF5FAFA),
@@ -99,20 +114,37 @@ class _StartupState extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              SizedBox(
-                width: 32,
-                height: 32,
-                child: CircularProgressIndicator(strokeWidth: 3),
-              ),
-              SizedBox(height: 18),
+              if (!error) ...[
+                const SizedBox(
+                  width: 32,
+                  height: 32,
+                  child: CircularProgressIndicator(strokeWidth: 3),
+                ),
+                const SizedBox(height: 18),
+              ],
               Text(
-                'MindTrack hazırlanıyor…',
-                style: TextStyle(
+                error
+                    ? 'Uygulama başlatılamadı.'
+                    : 'MindTrack hazırlanıyor…',
+                style: const TextStyle(
                   color: Color(0xFF194643),
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
                 ),
               ),
+              if (error) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  'Yerel depolama veya bağlantı hazırlanamadı.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Color(0xFF52716D), fontSize: 13),
+                ),
+                const SizedBox(height: 14),
+                FilledButton(
+                  onPressed: onRetry,
+                  child: const Text('Yeniden dene'),
+                ),
+              ],
             ],
           ),
         ),
