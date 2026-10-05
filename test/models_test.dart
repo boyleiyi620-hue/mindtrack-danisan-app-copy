@@ -13,6 +13,22 @@ import 'package:mindtrack_danisan_app/models/plan.dart';
 import 'package:mindtrack_danisan_app/models/task.dart';
 
 void main() {
+  test('uzak ve yerel kayıtlar birleştirilirken kayıt kaybı olmaz', () {
+    final remote = AppData(
+      clients: [Client(id: 'remote', name: 'Uzak')],
+      notes: [Note(id: 'same', clientId: 'remote', title: 'Uzak başlık')],
+    );
+    final local = AppData(
+      clients: [Client(id: 'local', name: 'Yerel')],
+      notes: [Note(id: 'same', clientId: 'remote', title: 'Yerel başlık')],
+    );
+
+    final merged = AppData.mergePreservingLocal(remote, local);
+
+    expect(merged.clients.map((c) => c.id), containsAll(['remote', 'local']));
+    expect(merged.notes.single.title, 'Yerel başlık');
+  });
+
   test('AppData JSON gidiş-dönüş kayıpsız çalışır', () {
     final form = FormEntry(
       id: 'f1',

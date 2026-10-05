@@ -160,7 +160,13 @@ class DataStore extends ChangeNotifier {
       // olay son yerel değişikliği tekrar eski uzak kopyayla ezebilir.
       if (hasUnsyncedChanges) {
         _remoteVersion = snapshot.version;
-        unawaited(_saveRemote(jsonEncode(data.toJson())));
+        final remoteData = AppData.fromJson(snapshot.data);
+        carryLocalBinaries(remoteData, data);
+        data = AppData.mergePreservingLocal(remoteData, data);
+        final merged = jsonEncode(data.toJson());
+        unawaited(BlobStore.instance.set(accounts.dataKey(localUser), merged));
+        notifyListeners();
+        unawaited(_saveRemote(merged));
         return;
       }
       _remoteVersion = snapshot.version;

@@ -127,6 +127,56 @@ class AppData {
         'financeGoals': financeGoals.map((e) => e.toJson()).toList(),
       };
 
+  /// Merges a remote snapshot without dropping records created on this
+  /// device. Existing IDs remain local-wins until record-level revisions are
+  /// available; records present on only one side are preserved from both.
+  static AppData mergePreservingLocal(AppData remote, AppData local) {
+    final merged = remote.toJson();
+    final localJson = local.toJson();
+    for (final key in const [
+      'forms', 'clients', 'assessments', 'appointments', 'notes', 'plans',
+      'tasks', 'documents', 'pdfCats', 'pdfFiles', 'transactions',
+      'trainings', 'financeGoals',
+    ]) {
+      merged[key] = _mergeRecords(
+        (merged[key] as List?) ?? const [],
+        (localJson[key] as List?) ?? const [],
+      );
+    }
+    return AppData.fromJson(merged);
+  }
+
+  static List<Map<String, dynamic>> _mergeRecords(List remote, List local) {
+    final result = <Map<String, dynamic>>[
+      for (final item in remote)
+        if (item is Map) Map<String, dynamic>.from(item),
+    ];
+    final indexes = <String, int>{};
+    for (var i = 0; i < result.length; i++) {
+      final key = _recordKey(result[i]);
+      if (key != null) indexes[key] = i;
+    }
+    for (final item in local) {
+      if (item is! Map) continue;
+      final record = Map<String, dynamic>.from(item);
+      final key = _recordKey(record);
+      if (key == null) {
+        result.add(record);
+      } else if (indexes.containsKey(key)) {
+        result[indexes[key]!] = record;
+      } else {
+        indexes[key] = result.length;
+        result.add(record);
+      }
+    }
+    return result;
+  }
+
+  static String? _recordKey(Map<String, dynamic> record) {
+    final value = (record['id'] ?? record['month'])?.toString().trim();
+    return value == null || value.isEmpty ? null : value;
+  }
+
   Client? clientById(String id) {
     for (final c in clients) {
       if (c.id == id) return c;
