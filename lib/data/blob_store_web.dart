@@ -43,8 +43,26 @@ class BlobStore {
     }
     try {
       if (!idb.IdbFactory.supported) return;
-      final result = await idb.IdbFactory().openCreate(_dbName, _storeName);
-      _db = result.database;
+      // `openCreate` in indexed_db 1.0.1 assumes `upgradeneeded` runs on
+      // every open. IndexedDB only fires it when a database is first created
+      // or upgraded, so reopening an existing database leaves its late locals
+      // uninitialized and can stop the entire Flutter web app from starting.
+      // Open the known v1 schema directly and create the store only during an
+      // actual upgrade; this preserves existing clinical data on later opens.
+      _db = await idb.IdbFactory().open(
+        _dbName,
+        version: 1,
+        onUpgradeNeeded: (event) {
+          final database = event.target.database;
+          if (!(database.objectStoreNames?.contains(_storeName) ?? false)) {
+            database.createObjectStore(
+              _storeName,
+              keyPath: null,
+              autoIncrement: false,
+            );
+          }
+        },
+      );
       await _loadAll();
     } catch (_) {
       _db = null;
