@@ -21,7 +21,7 @@ Future<bool> saveTextFile(String filename, String content, String mime) async {
 
 Future<String?> pickTextFile() async {
   try {
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['json'],
       withData: true,
