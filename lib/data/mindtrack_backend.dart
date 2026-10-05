@@ -89,6 +89,9 @@ class MindTrackBackend {
       await _db.auth.signInWithOAuth(
         OAuthProvider.google,
         redirectTo: Uri.base.origin,
+        // Her tıklamada Google hesap seçicisini göster; tarayıcıdaki yanlış
+        // Google oturumu sessizce seçilerek başka kullanıcıya bağlanmasın.
+        queryParams: const {'prompt': 'select_account'},
       );
     });
   }

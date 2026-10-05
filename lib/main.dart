@@ -115,7 +115,9 @@ class _AuthGateState extends State<AuthGate> {
 
   void _startTimeout() {
     _timeout?.cancel();
-    _timeout = Timer(const Duration(seconds: 8), () {
+    // Ağır/uyuyan Supabase oturum geri yüklemelerinde kullanıcıya geniş bir
+    // pencere tanı; sonsuz beklemeyi yine de önle.
+    _timeout = Timer(const Duration(minutes: 8), () {
       if (mounted) setState(() => _timedOut = true);
     });
   }
