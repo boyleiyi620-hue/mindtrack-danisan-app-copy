@@ -756,6 +756,4 @@ class _DataAwareTabState extends State<_DataAwareTab> {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) => _child;
 }
