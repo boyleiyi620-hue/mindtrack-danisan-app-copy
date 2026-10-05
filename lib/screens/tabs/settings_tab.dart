@@ -110,8 +110,6 @@ class _SettingsTabState extends State<SettingsTab> {
                       const SizedBox(height: 16),
                       _exportCard(),
                       const SizedBox(height: 16),
-                      _backupCard(),
-                      const SizedBox(height: 16),
                       _sampleDataCard(),
                       const SizedBox(height: 16),
                       _dataCard(),
@@ -682,43 +680,39 @@ class _SettingsTabState extends State<SettingsTab> {
               height: 1.5,
             ),
           ),
+          const SizedBox(height: 12),
+          const Text(
+            'Tam yedekleme (JSON)',
+            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Sağlık verisi içerir; dosyayı güvenli yerde saklayın.',
+            style: TextStyle(fontSize: 11.5, color: AppColors.muted),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                key: const Key('settings-export-backup'),
+                onPressed: _exportBackup,
+                icon: const Icon(Icons.download_outlined, size: 16),
+                label: const Text('Yedeği İndir'),
+              ),
+              OutlinedButton.icon(
+                key: const Key('settings-import-backup'),
+                onPressed: _importBackup,
+                icon: const Icon(Icons.upload_file_outlined, size: 16),
+                label: const Text('Yedek Yükle'),
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
-
-  Widget _backupCard() => _card(
-    Icons.backup_outlined,
-    'Tam Yedekleme',
-    Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Text(
-          'Danışanlar, randevular, notlar, formlar ve ayarlarınızı tek bir JSON dosyası olarak saklayın. Yedek dosyasını güvenli yerde tutun; sağlık verisi içerir.',
-          style: TextStyle(fontSize: 12.5, color: AppColors.text2, height: 1.5),
-        ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 10,
-          runSpacing: 8,
-          children: [
-            OutlinedButton.icon(
-              key: const Key('settings-export-backup'),
-              onPressed: _exportBackup,
-              icon: const Icon(Icons.download_outlined, size: 16),
-              label: const Text('Yedeği İndir'),
-            ),
-            OutlinedButton.icon(
-              key: const Key('settings-import-backup'),
-              onPressed: _importBackup,
-              icon: const Icon(Icons.upload_file_outlined, size: 16),
-              label: const Text('Yedek Yükle'),
-            ),
-          ],
-        ),
-      ],
-    ),
-  );
 
   Future<void> _exportBackup() async {
     final payload = jsonEncode({
