@@ -41,7 +41,18 @@ const pwaUpdater = await readFile(
 );
 assert.match(pwaUpdater, /waiting\.postMessage\(\{ type: 'SKIP_WAITING' \}\)/);
 assert.match(pwaUpdater, /isTextEditor\(document\.activeElement\)/);
+assert.match(pwaUpdater, /hadControllerAtStartup = Boolean\(navigator\.serviceWorker\.controller\)/);
+assert.match(pwaUpdater, /if \(!hadControllerAtStartup\)/);
 assert.doesNotMatch(pwaUpdater, /window\.confirm/);
+const psychologistPage = await readFile(
+  new URL('../web/index_psychologist.html', import.meta.url),
+  'utf8',
+);
+assert.ok(
+  psychologistPage.indexOf('document.body.append(bootstrap)') <
+    psychologistPage.indexOf('navigator.serviceWorker.register'),
+  'Flutter must start before waiting for service-worker registration',
+);
 const handlers = new Map();
 let fetchCount = 0;
 let navigationCount = 0;
