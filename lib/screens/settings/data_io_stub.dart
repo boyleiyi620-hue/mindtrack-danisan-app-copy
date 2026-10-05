@@ -26,8 +26,8 @@ Future<String?> pickTextFile() async {
       allowedExtensions: ['json'],
       withData: true,
     );
-    final bytes = result?.single.bytes;
-    return bytes == null ? null : utf8.decode(bytes);
+    if (result == null || result.isEmpty) return null;
+    return utf8.decode(await result.single.readAsBytes());
   } catch (_) {
     return null;
   }
