@@ -1,10 +1,9 @@
-// Güncellemeleri kullanıcıya danışarak uygular. Klinik notu yazılırken
-// service worker'ın sayfayı arka planda yenilemesi veri kaybı yaratabilir.
+// Updates activate automatically, but not while a text editor is focused.
 (() => {
   if (!('serviceWorker' in navigator)) return;
 
   let acceptedUpdate = false;
-  let prompting = false;
+  let controllerChangedWhileEditing = false;
   let pendingRegistration;
   let installPromptEvent;
 
@@ -120,39 +119,28 @@
   // hence the short delay lets the save handler finish before offering reload.
   document.addEventListener('focusout', () => {
     window.setTimeout(() => {
-      if (!isTextEditor(document.activeElement)) offerUpdate();
+      if (isTextEditor(document.activeElement)) return;
+      if (controllerChangedWhileEditing) {
+        window.location.reload();
+      } else {
+        offerUpdate();
+      }
     }, 700);
   }, true);
 
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (acceptedUpdate) window.location.reload();
+    if (isTextEditor(document.activeElement)) {
+      controllerChangedWhileEditing = true;
+      return;
+    }
+    window.location.reload();
   });
 
   function offerUpdate() {
     const waiting = pendingRegistration?.waiting;
-    if (!waiting || prompting || isTextEditor(document.activeElement)) return;
-
-    const declinedAt = Number(
-      sessionValue('mindtrack-update-declined-at') || 0,
-    );
-    if (Date.now() - declinedAt < 5 * 60 * 1000) return;
-
-    prompting = true;
-    window.setTimeout(() => {
-      const apply = window.confirm(
-        'MindTrack için yeni bir sürüm hazır.\n\n' +
-          'Kaydedilmemiş not veya form değişiklikleriniz varsa önce kaydedin. ' +
-          'Şimdi güncellemek ister misiniz?',
-      );
-      prompting = false;
-      if (!apply) {
-        setSessionValue('mindtrack-update-declined-at', String(Date.now()));
-        return;
-      }
-
-      acceptedUpdate = true;
-      waiting.postMessage({ type: 'SKIP_WAITING' });
-    }, 300);
+    if (!waiting || acceptedUpdate || isTextEditor(document.activeElement)) return;
+    acceptedUpdate = true;
+    waiting.postMessage({ type: 'SKIP_WAITING' });
   }
 
   function watchRegistration(registration) {
