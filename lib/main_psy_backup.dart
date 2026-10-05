@@ -7,7 +7,7 @@ import 'data/data_store.dart';
 import 'data/mindtrack_backend.dart';
 import 'screens/auth/auth_screen.dart';
 import 'screens/auth/pin_screen.dart';
-import 'screens/shell/main_shell.dart';
+import 'screens/shell/main_shell.dart' deferred as main_shell;
 import 'theme/app_theme.dart';
 
 Future<void> main() async {
@@ -51,7 +51,7 @@ class MindTrackApp extends StatelessWidget {
     if (store.current != null && backendSignedIn) {
       home = store.isLocked
           ? PinScreen(store: store, onUnlock: () {})
-          : MainShell(store: store, data: data);
+          : _DeferredMainShell(store: store, data: data);
     } else {
       home = AuthScreen(store: store, data: data);
     }
@@ -73,6 +73,63 @@ class MindTrackApp extends StatelessWidget {
         },
         home: home,
       ),
+    );
+  }
+}
+
+/// Oturum açılana kadar kimlik doğrulanmış tüm sekmeleri indirmeyi erteler.
+class _DeferredMainShell extends StatefulWidget {
+  const _DeferredMainShell({required this.store, required this.data});
+
+  final AccountStore store;
+  final DataStore data;
+
+  @override
+  State<_DeferredMainShell> createState() => _DeferredMainShellState();
+}
+
+class _DeferredMainShellState extends State<_DeferredMainShell> {
+  late Future<void> _loading;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  void _load() => _loading = main_shell.loadLibrary();
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<void>(
+      future: _loading,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Scaffold(
+            body: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Ana panel yüklenemedi. Bağlantınızı kontrol edin.',
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: () => setState(_load),
+                    child: const Text('Yeniden dene'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        return main_shell.MainShell(store: widget.store, data: widget.data);
+      },
     );
   }
 }

@@ -8,7 +8,7 @@ import '../../data/mindtrack_backend.dart';
 import '../../models/user_account.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/error_box.dart';
-import '../shell/main_shell.dart';
+import '../shell/main_shell.dart' deferred as main_shell;
 
 enum AuthMode { login, register }
 
@@ -276,11 +276,17 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   void _goHome() {
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) => MainShell(store: widget.store, data: widget.data),
-      ),
-    );
+    main_shell.loadLibrary().then((_) {
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => main_shell.MainShell(
+            store: widget.store,
+            data: widget.data,
+          ),
+        ),
+      );
+    });
   }
 
   @override
