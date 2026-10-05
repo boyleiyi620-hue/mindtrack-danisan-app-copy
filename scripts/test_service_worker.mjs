@@ -19,8 +19,10 @@ assert.doesNotMatch(bootstrap, /canvasKitForceCpuOnly\s*:\s*true/);
 for (const page of ['index.html', 'index_client.html', 'index_psychologist.html']) {
   const html = await readFile(new URL(`../web/${page}`, import.meta.url), 'utf8');
   assert.match(html, /id="mindtrack-boot"/);
-  assert.match(html, /mindtrack-sw-network-v8/);
+  assert.match(html, /mindtrack-sw-network-v9/);
   assert.match(html, /bootstrap\.onerror/);
+  assert.match(html, /rel="preload" href="main\.dart\.js" as="script"/);
+  assert.doesNotMatch(html, /navigator\.serviceWorker\.ready/);
 }
 
 const source = await readFile(
