@@ -108,6 +108,7 @@ Migration dosyaları hazır ve **sırayla** çalıştırılmalıdır:
 | `supabase/migrations/20260929120100_mindtrack_functions.sql` | RPC fonksiyonları, PDF depolama kovası, realtime yayın |
 | `supabase/migrations/20260929133000_appointment_workflow.sql` | Danışan randevu talebi, psikolog onayı/reddi ve iki taraflı durum senkronizasyonu |
 | `supabase/migrations/20261005160000_psychologist_records.sql` | Klinik kayıtların ayrı satırlar ve RLS ile kademeli taşınacağı temel tablo |
+| `supabase/migrations/20261005170000_organizations_memberships.sql` | Klinik tenant'ı, üyelikler ve `admin` / `psychologist` / `assistant` rolleri |
 
 ### Yöntem A — SQL Editor (CLI kurmanız gerekmez, önerilir)
 
@@ -117,6 +118,7 @@ Migration dosyaları hazır ve **sırayla** çalıştırılmalıdır:
    `20260929120100_mindtrack_functions.sql` içeriğini yapıştırın → **Run**
 4. `20260929133000_appointment_workflow.sql` içeriğinin tamamını yapıştırın → **Run**
 5. `20261005160000_psychologist_records.sql` içeriğinin tamamını yapıştırın → **Run**
+6. `20261005170000_organizations_memberships.sql` içeriğinin tamamını yapıştırın → **Run**
 
 Oluşturulanlar:
 

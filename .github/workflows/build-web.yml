@@ -32,6 +32,7 @@ jobs:
           node scripts/test_service_worker.mjs
           node scripts/test_security_headers.mjs
           node scripts/test_record_schema.mjs
+          node scripts/test_tenant_schema.mjs
           flutter test
           ./scripts/build_web.sh
 
