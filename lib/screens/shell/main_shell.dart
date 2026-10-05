@@ -7,6 +7,9 @@ import '../../data/data_store.dart';
 import '../../data/mindtrack_backend.dart';
 import '../../data/sync_status.dart';
 import '../../models/user_account.dart';
+import '../../models/client.dart';
+import '../../models/note.dart';
+import '../../models/task.dart';
 import '../../theme/app_theme.dart';
 import '../auth/pin_screen.dart';
 import '../auth/pin_setup_dialog.dart';
@@ -286,6 +289,11 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
             onPressed: _onLockPressed,
             icon: Icon(_u.hasPin ? Icons.lock_outline : Icons.shield_outlined),
           ),
+        IconButton(
+          tooltip: 'Genel arama',
+          onPressed: _showGlobalSearch,
+          icon: const Icon(Icons.search),
+        ),
         if (wide) ...[
           Padding(
             padding: const EdgeInsets.only(right: 6),
@@ -654,6 +662,157 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
     if (i >= 0) setState(() => _index = i);
   }
 
+  Future<void> _showGlobalSearch() async {
+    final query = TextEditingController();
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            final results = _search(query.text);
+            return AlertDialog(
+              title: TextField(
+                controller: query,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: 'Danışan, randevu, görev veya not ara',
+                  prefixIcon: Icon(Icons.search),
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (_) => setDialogState(() {}),
+                onSubmitted: (_) {
+                  if (results.isNotEmpty) {
+                    Navigator.of(dialogContext).pop();
+                    _goTab(results.first.tab);
+                  }
+                },
+              ),
+              content: SizedBox(
+                width: 560,
+                child: query.text.trim().isEmpty
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 22),
+                        child: Text(
+                          'Aramak istediğiniz kelimeyi yazın. Sonuçlar bu cihazdaki güncel verilerden getirilir.',
+                        ),
+                      )
+                    : results.isEmpty
+                        ? const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 22),
+                            child: Text('Eşleşen kayıt bulunamadı.'),
+                          )
+                        : ConstrainedBox(
+                            constraints: const BoxConstraints(maxHeight: 430),
+                            child: ListView.separated(
+                              shrinkWrap: true,
+                              itemCount: results.length,
+                              separatorBuilder: (_, __) => const Divider(height: 1),
+                              itemBuilder: (_, index) {
+                                final result = results[index];
+                                return ListTile(
+                                  leading: Icon(result.icon, color: AppColors.primary),
+                                  title: Text(result.title),
+                                  subtitle: Text(result.detail),
+                                  trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+                                  onTap: () {
+                                    Navigator.of(dialogContext).pop();
+                                    _goTab(result.tab);
+                                  },
+                                );
+                              },
+                            ),
+                          ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Kapat'),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+    } finally {
+      query.dispose();
+    }
+  }
+
+  List<_SearchResult> _search(String rawQuery) {
+    final query = rawQuery.trim().toLowerCase();
+    if (query.isEmpty) return const [];
+    final data = widget.data.data;
+    final clientsById = <String, Client>{
+      for (final client in data.clients) client.id: client,
+    };
+    final results = <_SearchResult>[];
+
+    for (final client in data.clients) {
+      if (_contains(query, [client.name, client.email, client.phone, client.notes, ...client.tags])) {
+        results.add(_SearchResult(
+          title: client.name,
+          detail: [client.email, client.phone].where((e) => e.isNotEmpty).join(' · ').isEmpty
+              ? 'Danışan · ${client.status}'
+              : [client.email, client.phone].where((e) => e.isNotEmpty).join(' · '),
+          icon: Icons.person_outline,
+          tab: 'clients',
+        ));
+      }
+    }
+    for (final appointment in data.appointments) {
+      final client = clientsById[appointment.clientId];
+      if (_contains(query, [
+        appointment.date,
+        appointment.time,
+        appointment.type,
+        appointment.status,
+        appointment.notes,
+        client?.name ?? '',
+      ])) {
+        results.add(_SearchResult(
+          title: client?.name.isNotEmpty == true ? client!.name : 'Randevu',
+          detail: '${appointment.date} · ${appointment.time} · ${appointment.status}',
+          icon: Icons.calendar_month_outlined,
+          tab: 'appointments',
+        ));
+      }
+    }
+    for (final task in data.tasks) {
+      final client = clientsById[task.clientId];
+      if (_contains(query, [task.text, task.priority, task.dueDate ?? '', client?.name ?? ''])) {
+        results.add(_SearchResult(
+          title: task.text,
+          detail: '${task.done ? 'Tamamlandı' : 'Açık'}${client == null ? '' : ' · ${client.name}'}',
+          icon: Icons.check_circle_outline,
+          tab: 'tasks',
+        ));
+      }
+    }
+    for (final note in data.notes) {
+      final client = clientsById[note.clientId];
+      if (_contains(query, [
+        note.title,
+        note.mood,
+        note.subjective,
+        note.objective,
+        note.assessment,
+        note.plan,
+        client?.name ?? '',
+      ])) {
+        results.add(_SearchResult(
+          title: note.title.isEmpty ? 'Seans notu' : note.title,
+          detail: client?.name ?? 'Danışan bağlantısı yok',
+          icon: Icons.description_outlined,
+          tab: 'clients',
+        ));
+      }
+    }
+    return results.take(40).toList();
+  }
+
+  bool _contains(String query, Iterable<String> values) =>
+      values.any((value) => value.toLowerCase().contains(query));
+
   Widget _content() {
     final safeIndex = _index.clamp(0, _tabBuilders.length - 1);
     return IndexedStack(
@@ -693,6 +852,20 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
       ),
     );
   }
+}
+
+class _SearchResult {
+  const _SearchResult({
+    required this.title,
+    required this.detail,
+    required this.icon,
+    required this.tab,
+  });
+
+  final String title;
+  final String detail;
+  final IconData icon;
+  final String tab;
 }
 
 /// Keeps inactive tabs alive without rebuilding their heavy lists for every
