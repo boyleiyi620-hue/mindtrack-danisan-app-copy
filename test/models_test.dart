@@ -28,6 +28,7 @@ void main() {
     expect(account.organizationRole, 'psychologist');
     expect(UserAccount.fromJson(account.toJson()).organizationRole,
         'psychologist');
+    expect(UserAccount.fromJson(account.toJson()).authUserId, isNull);
   });
 
   test('uzak ve yerel kayıtlar birleştirilirken kayıt kaybı olmaz', () {

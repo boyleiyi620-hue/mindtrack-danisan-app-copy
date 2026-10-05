@@ -69,8 +69,12 @@ class _AuthScreenState extends State<AuthScreen> {
         salt: salt,
         pwdHash: hashPassword(randomHex(), salt),
         createdAt: DateTime.now().millisecondsSinceEpoch.toDouble(),
+        authUserId: backend.userId,
       );
       widget.store.addUser(user);
+    } else if (user.authUserId != backend.userId) {
+      user.authUserId = backend.userId;
+      widget.store.updateUser(user);
     }
     widget.store.setSession(user);
     await _attachOrganization(user);
@@ -138,8 +142,13 @@ class _AuthScreenState extends State<AuthScreen> {
         salt: salt,
         pwdHash: hashPassword(password ?? randomHex(), salt),
         createdAt: DateTime.now().millisecondsSinceEpoch.toDouble(),
+        authUserId: backend.userId,
       );
       widget.store.addUser(u);
+    }
+    if (u.authUserId != MindTrackBackend.instance.userId) {
+      u.authUserId = MindTrackBackend.instance.userId;
+      widget.store.updateUser(u);
     }
     widget.store.setSession(u);
     await _attachOrganization(u);
@@ -269,6 +278,7 @@ class _AuthScreenState extends State<AuthScreen> {
         }
         throw 'Hesap oluşturulamadı: ${e.message}';
       }
+      u.authUserId = MindTrackBackend.instance.userId;
     }
     widget.store.addUser(u);
     widget.store.setSession(u);

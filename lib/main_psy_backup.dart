@@ -56,10 +56,21 @@ class _PsychologistBootstrapAppState
   // Büyük klinik JSON'unu ilk Flutter karesinden önce çözümleme; panel
   // iskeleti göründükten sonra _DeferredMainShell tarafından yüklenir.
   final data = DataStore(store, autoLoad: false);
+    final backendUserId = backendReady ? MindTrackBackend.instance.userId : null;
+    // Yerel oturum eski bir kullanıcıya aitse onun klinik verisini yeni
+    // Supabase oturumuyla açma. Kullanıcı AuthScreen'e dönüp kimliği eşleştirsin.
+    if (store.current != null &&
+        backendUserId != null &&
+        store.current!.authUserId != backendUserId) {
+      store.clearSession();
+    }
     return _PsychologistBootstrapResult(
       store: store,
       data: data,
-      backendSignedIn: backendReady && MindTrackBackend.instance.isSignedIn,
+      backendSignedIn: backendReady &&
+          MindTrackBackend.instance.isSignedIn &&
+          store.current != null &&
+          store.current!.authUserId == backendUserId,
     );
   }
 
