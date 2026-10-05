@@ -91,15 +91,8 @@ window.addEventListener('unhandledrejection', (event) => {
   showStartupError('Uygulama başlatılamadı. Yeniden deneyin.', detail);
 });
 
-// Mobile Chromium WebViews/PWAs can expose WebGL but fail CanvasKit shader
-// compilation on some GPU drivers. Prefer the software path on touch Android;
-// desktop and iOS keep the accelerated renderer.
-const isTouchAndroid = /Android/i.test(navigator.userAgent) &&
-  window.matchMedia('(pointer: coarse)').matches;
-
 const flutterConfig = {
   canvasKitBaseUrl: 'canvaskit/',
-  canvasKitForceCpuOnly: isTouchAndroid,
 };
 
 _flutter.loader.load({
