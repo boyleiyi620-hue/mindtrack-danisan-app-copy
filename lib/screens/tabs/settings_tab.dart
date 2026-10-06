@@ -327,7 +327,7 @@ class _SettingsTabState extends State<SettingsTab> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: role,
+                initialValue: role,
                 decoration: const InputDecoration(labelText: 'Rol'),
                 items: const [
                   DropdownMenuItem(value: 'psychologist', child: Text('Psikolog')),
@@ -364,12 +364,12 @@ class _SettingsTabState extends State<SettingsTab> {
       );
       if (!mounted) return;
       _refreshMembers();
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(this.context).showSnackBar(
         const SnackBar(content: Text('Klinik üyesi eklendi.')),
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(this.context).showSnackBar(
         SnackBar(content: Text('Üye eklenemedi: $error')),
       );
     }
