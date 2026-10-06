@@ -55,10 +55,25 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Future<void> _restoreOAuthUser() async {
     final backend = MindTrackBackend.instance;
+    final authUserId = backend.userId;
     final email = backend.userEmail?.trim().toLowerCase();
-    if (!backend.isSignedIn || email == null || email.isEmpty) return;
-    var user = widget.store.findByEmail(email);
+    if (!backend.isSignedIn ||
+        authUserId == null ||
+        email == null ||
+        email.isEmpty) {
+      return;
+    }
+    var user = widget.store.findByAuthUserId(authUserId);
     if (user == null) {
+      final emailUser = widget.store.findByEmail(email);
+      if (emailUser != null && emailUser.authUserId != null) {
+        if (mounted) {
+          setState(() => _error =
+              'Bu tarayıcıda farklı bir MindTrack hesabı açık. Önce çıkış yapıp tekrar deneyin.');
+        }
+        await backend.signOut();
+        return;
+      }
       final salt = randomHex();
       user = UserAccount(
         id: backend.userId ?? '$salt${DateTime.now().microsecondsSinceEpoch}',
@@ -72,9 +87,12 @@ class _AuthScreenState extends State<AuthScreen> {
         authUserId: backend.userId,
       );
       widget.store.addUser(user);
-    } else if (user.authUserId != backend.userId) {
-      user.authUserId = backend.userId;
-      widget.store.updateUser(user);
+    } else if (user.email.toLowerCase() != email) {
+      if (mounted) {
+        setState(() => _error = 'Oturum kimliği ile hesap e-postası eşleşmiyor.');
+      }
+      await backend.signOut();
+      return;
     }
     widget.store.setSession(user);
     await _attachOrganization(user);
@@ -129,7 +147,15 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Future<void> _completeRemoteLogin(String email, {String? password}) async {
-    var u = widget.store.findByEmail(email);
+    final backendUserId = MindTrackBackend.instance.userId;
+    if (backendUserId == null) throw 'Sunucu hesabı doğrulanamadı.';
+    var u = widget.store.findByAuthUserId(backendUserId);
+    final emailUser = widget.store.findByEmail(email);
+    if (u == null && emailUser != null && emailUser.authUserId != null) {
+      await MindTrackBackend.instance.signOut();
+      throw 'Bu e-posta bu cihazda başka bir sunucu hesabına bağlı. '
+          'Eski oturum verisi gösterilmedi.';
+    }
     if (u == null) {
       final backend = MindTrackBackend.instance;
       final salt = randomHex();
@@ -146,8 +172,12 @@ class _AuthScreenState extends State<AuthScreen> {
       );
       widget.store.addUser(u);
     }
-    if (u.authUserId != MindTrackBackend.instance.userId) {
-      u.authUserId = MindTrackBackend.instance.userId;
+    if (u.email.toLowerCase() != email) {
+      await MindTrackBackend.instance.signOut();
+      throw 'Oturum kimliği ile hesap e-postası eşleşmiyor.';
+    }
+    if (u.authUserId == null) {
+      u.authUserId = backendUserId;
       widget.store.updateUser(u);
     }
     widget.store.setSession(u);

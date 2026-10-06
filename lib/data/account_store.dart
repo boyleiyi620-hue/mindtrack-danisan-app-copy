@@ -71,6 +71,15 @@ class AccountStore {
     return null;
   }
 
+  /// Supabase kimliği, e-postadan daha güçlü hesap kimliğidir. E-posta
+  /// eşleşmesi eski yerel kayıtları yanlış oturumla birleştirmemelidir.
+  UserAccount? findByAuthUserId(String authUserId) {
+    for (final u in users) {
+      if (u.authUserId == authUserId) return u;
+    }
+    return null;
+  }
+
   void addUser(UserAccount u) {
     users.add(u);
     saveUsers();

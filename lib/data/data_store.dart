@@ -90,6 +90,18 @@ class DataStore extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    final backend = MindTrackBackend.instance;
+    // Yerel klinik önbelleği yalnızca onu oluşturan Supabase hesabıyla
+    // birlikte açılabilir. Kimlik doğrulanmamış/eski oturumda gösterme.
+    if (!backend.isSignedIn ||
+        u.authUserId == null ||
+        u.authUserId != backend.userId) {
+      _remoteSubscription?.cancel();
+      _remoteSubscription = null;
+      data = AppData.empty();
+      notifyListeners();
+      return;
+    }
     final localKey = accounts.dataKey(u);
     try {
       final raw = BlobStore.instance.get(localKey);
