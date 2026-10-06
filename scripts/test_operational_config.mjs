@@ -14,6 +14,9 @@ assert.doesNotMatch(build, /SUPABASE_SERVICE_ROLE|service_role=/i);
 
 const uptime = await readFile(new URL('./check_uptime.mjs', import.meta.url), 'utf8');
 assert.match(uptime, /redirect: 'error'/);
-assert.match(uptime, /body\.status !== 'ok'/);
+assert.match(uptime, /body\?\.status !== 'ok'/);
+assert.match(uptime, /AbortSignal\.timeout\(timeoutMs\)/);
+assert.match(uptime, /healthUrl\.protocol !== 'https:'/);
+assert.match(uptime, /body\?\.service !== 'mindtrack-web'/);
 
 console.log('Operational configuration checks passed.');

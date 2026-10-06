@@ -43,7 +43,7 @@ for (let attempt = 1; attempt <= attempts; attempt += 1) {
       !Array.isArray(body?.checks) ||
       body.checks.length === 0
     ) {
-      throw new Error(`HTTP ${response.status}, status=${body.status}`);
+      throw new Error(`HTTP ${response.status}, status=${body?.status}`);
     }
     passed += 1;
     console.log(`uptime check ${attempt}/${attempts}: ok (${Date.now() - started}ms)`);
