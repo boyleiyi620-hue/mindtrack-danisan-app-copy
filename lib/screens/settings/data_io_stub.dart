@@ -24,7 +24,6 @@ Future<String?> pickTextFile() async {
     final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['json'],
-      withData: true,
     );
     if (result == null || result.isEmpty) return null;
     return utf8.decode(await result.single.readAsBytes());

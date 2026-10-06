@@ -8,8 +8,6 @@ import '../../data/mindtrack_backend.dart';
 import '../../data/sync_status.dart';
 import '../../models/user_account.dart';
 import '../../models/client.dart';
-import '../../models/note.dart';
-import '../../models/task.dart';
 import '../../theme/app_theme.dart';
 import '../auth/pin_screen.dart';
 import '../auth/pin_setup_dialog.dart';
@@ -706,7 +704,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
                             child: ListView.separated(
                               shrinkWrap: true,
                               itemCount: results.length,
-                              separatorBuilder: (_, __) => const Divider(height: 1),
+                              separatorBuilder: (_, _) => const Divider(height: 1),
                               itemBuilder: (_, index) {
                                 final result = results[index];
                                 return ListTile(

@@ -531,7 +531,7 @@ class _TransactionEditorState extends State<_TransactionEditor> {
             const SizedBox(height: 16),
             if (_type == 'income')
               DropdownButtonFormField<String>(
-                value: _clientId,
+                initialValue: _clientId,
                 decoration: const InputDecoration(labelText: 'Danışan (Opsiyonel)'),
                 items: [
                   const DropdownMenuItem(value: null, child: Text('Genel Gelir')),
@@ -569,7 +569,7 @@ class _TransactionEditorState extends State<_TransactionEditor> {
               ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: _category,
+              initialValue: _category,
               decoration: const InputDecoration(labelText: 'Kategori'),
               items: (_type == 'income' 
                 ? ['Seans', 'Test/Envanter', 'Eğitim/Seminer', 'Diğer Gelir']

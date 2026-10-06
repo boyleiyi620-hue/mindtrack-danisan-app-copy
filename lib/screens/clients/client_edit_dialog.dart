@@ -365,7 +365,7 @@ class _ClientEditDialogState extends State<ClientEditDialog> {
                         const SizedBox(width: 10),
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: _gender,
+                            initialValue: _gender,
                             isExpanded: true,
                             decoration: const InputDecoration(
                               labelText: 'Cinsiyet',
@@ -430,7 +430,7 @@ class _ClientEditDialogState extends State<ClientEditDialog> {
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      value: _status,
+                      initialValue: _status,
                       isExpanded: true,
                       decoration: const InputDecoration(
                         labelText: 'Durum',

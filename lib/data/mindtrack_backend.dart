@@ -464,8 +464,9 @@ class MindTrackBackend {
         if (!matchesRef && !matchesEmail) continue;
         final uid = row['client_uid']?.toString().trim() ?? '';
         final status = row['status']?.toString() ?? '';
-        if (uid.isNotEmpty && (status.isEmpty || status == 'paired'))
+        if (uid.isNotEmpty && (status.isEmpty || status == 'paired')) {
           return uid;
+        }
       }
       return '';
     }
@@ -541,7 +542,9 @@ class MindTrackBackend {
                 if (date == null || date.year >= 2099) return false;
                 if (name == null ||
                     name.isEmpty ||
-                    name == 'bilinmeyen danışan') return false;
+                    name == 'bilinmeyen danışan') {
+                  return false;
+                }
                 return true;
               })
               .map((row) => _legacyAppointment(row))

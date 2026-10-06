@@ -1,6 +1,9 @@
 import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
+// Dialog flows check State.mounted after awaited operations.
+// ignore_for_file: use_build_context_synchronously
+
 import 'package:flutter/material.dart';
 
 import '../../data/data_store.dart';
@@ -465,7 +468,7 @@ class _FormsTabState extends State<FormsTab> {
               ? const Center(child: Text('Önce bir danışan ekleyin.'))
               : ListView.separated(
                   itemCount: _d.clients.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  separatorBuilder: (_, _) => const Divider(height: 1),
                   itemBuilder: (ctx, index) {
                     final client = _d.clients[index];
                     return ListTile(
@@ -534,16 +537,6 @@ class _FormsTabState extends State<FormsTab> {
         SnackBar(content: Text('Form gönderilemedi: ${error.message}')),
       );
     }
-  }
-
-  /// Danışanlardan gelen form cevaplarını canlı olarak gösterir.
-  Future<void> _openIncomingResponses(FormEntry f) async {
-    final ready = await _ensureBackendSession(context);
-    if (!ready || !mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (_) => _IncomingResponsesDialog(form: f),
-    );
   }
 
   /// Yerel hesabın uzak karşılığı açık değilse şifre ister.

@@ -1347,14 +1347,20 @@ class _ClientFormDialogState extends State<ClientFormDialog> {
   ) {
     final options = _listValue(question['options']);
     return [
-      for (final option in options)
-        RadioListTile<String>(
-          contentPadding: EdgeInsets.zero,
-          title: Text(option.toString()),
-          value: option.toString(),
-          groupValue: answer?.toString(),
-          onChanged: (value) => setState(() => _answers[id] = value),
+      RadioGroup<String>(
+        groupValue: answer?.toString(),
+        onChanged: (value) => setState(() => _answers[id] = value),
+        child: Column(
+          children: [
+            for (final option in options)
+              RadioListTile<String>(
+                contentPadding: EdgeInsets.zero,
+                title: Text(option.toString()),
+                value: option.toString(),
+              ),
+          ],
         ),
+      ),
     ];
   }
 

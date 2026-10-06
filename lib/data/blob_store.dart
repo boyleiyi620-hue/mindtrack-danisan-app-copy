@@ -12,5 +12,7 @@
 /// await BlobStore.instance.init();   // uygulama açılışında bir kez
 /// BlobStore.instance.set('anahtar', 'değer');
 /// ```
+library;
+
 export 'blob_store_stub.dart'
     if (dart.library.js_interop) 'blob_store_web.dart';

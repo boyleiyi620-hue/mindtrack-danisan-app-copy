@@ -1,3 +1,6 @@
+// Existing dialog flows check State.mounted after awaited operations.
+// ignore_for_file: use_build_context_synchronously
+
 import 'dart:async';
 import 'dart:convert';
 
@@ -53,8 +56,9 @@ class _ClientsTabState extends State<ClientsTab> {
     final q = _q.trim().toLowerCase();
     final clients =
         _d.clients.where((c) {
-          if (_status.isNotEmpty && (c.status == _status) == false)
+          if (_status.isNotEmpty && (c.status == _status) == false) {
             return false;
+          }
           if (q.isEmpty) return true;
           return c.name.toLowerCase().contains(q) ||
               c.email.toLowerCase().contains(q) ||
@@ -2076,7 +2080,7 @@ class _ClientsTabState extends State<ClientsTab> {
                 height: 300,
                 child: ListView.separated(
                   itemCount: items.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  separatorBuilder: (_, _) => const Divider(height: 1),
                   itemBuilder: (_, i) {
                     final d = items[i];
                     final response = (d['response'] ?? '').toString().trim();
