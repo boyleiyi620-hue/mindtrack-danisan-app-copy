@@ -5,6 +5,10 @@ const migration = await readFile(
   new URL('../supabase/migrations/20261006170000_record_history_backup.sql', import.meta.url),
   'utf8',
 );
+const triggerFix = await readFile(
+  new URL('../supabase/migrations/20261006190000_fix_record_history_trigger.sql', import.meta.url),
+  'utf8',
+);
 const runbook = await readFile(
   new URL('../docs/OPERATIONS-BACKUP.md', import.meta.url),
   'utf8',
@@ -21,6 +25,8 @@ for (const fragment of [
 ]) {
   assert.match(migration.toLowerCase(), new RegExp(fragment.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 }
+
+assert.match(triggerFix, /if tg_op = 'DELETE' then\s+return old;\s+end if;\s+return new;/i);
 
 for (const fragment of [
   'PITR/günlük yedekleme',

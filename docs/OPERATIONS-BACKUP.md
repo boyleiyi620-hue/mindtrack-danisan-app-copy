@@ -7,9 +7,12 @@ veritabanı felaket yedeği değildir.
 
 ## Canlı Supabase kurulumu
 
-1. Migration'ları staging Supabase projesine uygula.
+1. Migration'ları staging Supabase projesine uygula; özellikle
+   `20261006190000_fix_record_history_trigger.sql` güncellemenin devam etmesi
+   için gereklidir.
 2. Bir test hesabı ile danışan ve randevu oluştur, güncelle, sil.
-3. `psychologist_record_history` satırlarının oluştuğunu doğrula.
+3. Güncelleme sonrasında aktif kaydın yeni değeri taşıdığını ve
+   `psychologist_record_history` satırının eski değeri sakladığını doğrula.
 4. `restore_psychologist_record(history_id)` RPC'si ile yalnızca test kaydını
    geri yükle ve istemcinin yeni `record_version` aldığını doğrula.
 5. Supabase projesinde PITR/günlük yedekleme planını etkinleştir ve saklama
