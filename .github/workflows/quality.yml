@@ -34,6 +34,9 @@ jobs:
       - name: Security header checks
         run: node scripts/test_security_headers.mjs
 
+      - name: Observability schema checks
+        run: node scripts/test_observability_schema.mjs
+
       - name: Analyze
         run: flutter analyze
 

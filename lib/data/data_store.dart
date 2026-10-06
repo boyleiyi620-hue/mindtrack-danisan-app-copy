@@ -58,6 +58,10 @@ class DataStore extends ChangeNotifier {
   String? _syncMessage;
   Timer? _retryTimer;
   bool _disposed = false;
+  String? _lastReportedError;
+  DateTime? _lastReportedErrorAt;
+
+  static const String _appVersion = '1.0.1+2';
 
   /// Tekrarlanan denemelerde beklenecek süreler (üstel geri çekilme).
   /// Son adımda 10 dakikada bir denemeye düşer.
@@ -572,8 +576,28 @@ class DataStore extends ChangeNotifier {
   void _onRemoteFailed(Object error) {
     _failures++;
     _lastErrorAt = DateTime.now();
-    _setPhase(SyncPhase.error, message: _describeSyncError(error));
+    final message = _describeSyncError(error);
+    _setPhase(SyncPhase.error, message: message);
+    _reportSyncError(message);
     _scheduleRetry();
+  }
+
+  void _reportSyncError(String message) {
+    final now = DateTime.now();
+    final fingerprint = '$message:${_failures > 0 ? 'sync' : 'error'}';
+    if (_lastReportedError == fingerprint &&
+        _lastReportedErrorAt != null &&
+        now.difference(_lastReportedErrorAt!) < const Duration(minutes: 5)) {
+      return;
+    }
+    _lastReportedError = fingerprint;
+    _lastReportedErrorAt = now;
+    unawaited(MindTrackBackend.instance.reportClientError(
+      category: 'sync_failure',
+      message: message,
+      severity: _failures >= 3 ? 'critical' : 'error',
+      appVersion: _appVersion,
+    ));
   }
 
   void _scheduleRetry() {

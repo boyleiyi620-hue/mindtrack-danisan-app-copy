@@ -213,7 +213,32 @@ class MindTrackBackend {
             'p_user_id': userId,
             'p_status': status,
           },
-        ));
+    ));
+  }
+
+  /// Klinik verisi göndermeden teknik hata olayını kaydeder. Raporlama
+  /// başarısız olursa asıl kullanıcı akışı etkilenmez.
+  Future<void> reportClientError({
+    required String category,
+    required String message,
+    required String severity,
+    required String appVersion,
+  }) async {
+    final uid = userId;
+    if (uid == null) return;
+    try {
+      await _guard(() => _db.rpc(
+            'report_client_error',
+            params: {
+              'p_category': category,
+              'p_message': message,
+              'p_severity': severity,
+              'p_app_version': appVersion,
+            },
+          ));
+    } catch (_) {
+      // Telemetri klinik uygulamanın çalışmasını durdurmamalı.
+    }
   }
 
   // ------------------------------------------------ psikologun klinik kaydı ---
