@@ -2,13 +2,19 @@
 
 ## Ortam ayrımı
 
-- `web-pwa-release` yalnızca staging Supabase URL/key ile derlenir.
-- `master` yalnızca production Supabase URL/key ile derlenir.
-- `SUPABASE_PUBLISHABLE_KEY` istemciye gidebilir; `service_role` veya başka bir
-  secret anahtar Flutter derlemesine kesinlikle verilmez.
-- GitHub Actions ortamlarında `STAGING_SUPABASE_URL`,
-  `STAGING_SUPABASE_PUBLISHABLE_KEY`, `PRODUCTION_SUPABASE_URL` ve
-  `PRODUCTION_SUPABASE_PUBLISHABLE_KEY` ayrı secret olarak tutulmalıdır.
+- `master` push'u GitHub `Production` environment'ını seçer. Manuel build başka
+  bir dalda başlatılırsa `Preview` environment'ı seçilir.
+- Her environment'ta `SUPABASE_URL` değişkeni ve
+  `SUPABASE_PUBLISHABLE_KEY` secret'ı ayrı tanımlanmalıdır. Build, biri eksikse
+  durur; production bağlantısına sessiz geri dönüş yapmaz.
+- `SUPABASE_PUBLISHABLE_KEY` istemciye gömülür ve public anahtar olmalıdır.
+  `service_role` veya başka bir secret anahtar Flutter derlemesine kesinlikle
+  verilmez.
+- Şu anda GitHub'da `Production` ve `Preview` environment'ları var, ancak bu
+  değerler ayarlı değil. Production build'i yeniden etkinleştirmek için
+  `Production` değerleri eklenmeli; ayrı bir Supabase staging projesi kurulana
+  kadar `Preview` build'i bilerek başarısız olur. Bu dala ait Vercel Preview'ı
+  production verisiyle kullanmayın.
 
 ## Health ve uptime
 
@@ -48,7 +54,7 @@ takibi gerekiyorsa harici uptime servisi bağlanmalıdır.
 
 ## Dış sistem bağımlılıkları
 
-Bu kontroller repo içinde doğrulanabilir; ancak staging/prod projeleri, Vercel
-ortam secret'ları, özel SMTP, Supabase PITR, GitHub depo değişkeni ve sağlayıcı
-kullanım alarmları yönetim panellerinde etkinleştirilmeden Aşama 2 tamamlanmış
-sayılmaz.
+Bu kontroller repo içinde doğrulanabilir; ancak production ve ayrı staging
+Supabase projeleri, GitHub environment değerleri, güvenli Vercel Preview ayarı,
+özel SMTP, Supabase PITR, GitHub depo değişkeni ve sağlayıcı kullanım alarmları
+yönetim panellerinde etkinleştirilmeden Aşama 2 tamamlanmış sayılmaz.

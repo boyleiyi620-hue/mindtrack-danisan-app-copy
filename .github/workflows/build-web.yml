@@ -12,6 +12,8 @@ jobs:
   build:
     if: "!contains(github.event.head_commit.message, '[web-build]')"
     runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.ref_name == 'master' && 'Production' || 'Preview' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,9 +27,13 @@ jobs:
 
       - name: Build web bundles
         env:
-          SUPABASE_URL: https://aqswdmhwqhrsempoiqfv.supabase.co
-          SUPABASE_PUBLISHABLE_KEY: sb_publishable_ugqE_bZ_IyNedJMk1I_saA_-eMtQAjE
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
         run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_PUBLISHABLE_KEY" ]; then
+            echo "SUPABASE_URL variable and SUPABASE_PUBLISHABLE_KEY secret are required in the selected GitHub environment." >&2
+            exit 2
+          fi
           flutter pub get
           node scripts/test_service_worker.mjs
           node scripts/test_security_headers.mjs
