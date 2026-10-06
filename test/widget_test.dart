@@ -126,7 +126,7 @@ void main() {
     await registerViaUi(tester, 'Menu Test', 'menu@klinik.com');
 
     // Alt menü görünür, yan menü yok
-    expect(find.text('Danışanlar'), findsOneWidget);
+    expect(find.text('Danışanlar'), findsNWidgets(2));
     expect(find.text('ANA MENÜ'), findsNothing);
 
     await tester.tap(find.text('Danışanlar'));
