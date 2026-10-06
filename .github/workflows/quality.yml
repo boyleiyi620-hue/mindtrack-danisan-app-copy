@@ -37,6 +37,9 @@ jobs:
       - name: Observability schema checks
         run: node scripts/test_observability_schema.mjs
 
+      - name: Backup schema checks
+        run: node scripts/test_backup_schema.mjs
+
       - name: Analyze
         run: flutter analyze
 
