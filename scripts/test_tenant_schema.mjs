@@ -60,3 +60,30 @@ for (const fragment of [
   }
 }
 console.log('Membership management RPC checks passed.');
+
+const assistantRpc = await readFile(
+  new URL('../supabase/migrations/20261006150000_assistant_limited_records.sql', import.meta.url),
+  'utf8',
+);
+for (const fragment of [
+  'create or replace function public.fetch_assistant_records',
+  "r.record_type in ('client', 'appointment')",
+  "'name', coalesce(r.data->>'name', '')",
+  "'record_type', r.record_type",
+  'grant execute on function public.fetch_assistant_records',
+]) {
+  if (!assistantRpc.toLowerCase().includes(fragment.toLowerCase())) {
+    throw new Error(`Asistan görünümü doğrulaması başarısız: ${fragment}`);
+  }
+}
+for (const forbidden of [
+  "'notes'",
+  "'diagnosisCodes'",
+  "'safety'",
+  "'financeGoals'",
+]) {
+  if (assistantRpc.toLowerCase().includes(forbidden.toLowerCase())) {
+    throw new Error(`Asistan görünümü hassas alan içeriyor: ${forbidden}`);
+  }
+}
+console.log('Assistant limited-record checks passed.');

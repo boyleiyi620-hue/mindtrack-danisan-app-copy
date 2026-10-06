@@ -337,6 +337,23 @@ class MindTrackBackend {
         .toList();
   }
 
+  /// Asistan için yalnızca danışan dizini ve randevu özetlerini döndürür.
+  /// Sunucu tarafı RPC'si not, tanı, güvenlik planı ve diğer kayıt alanlarını
+  /// hiç üretmediği için istemci tarafı filtrelemeye güvenilmez.
+  Future<List<Map<String, dynamic>>> fetchAssistantRecords(
+    String organizationId,
+  ) async {
+    final result = await _guard(() => _db.rpc(
+          'fetch_assistant_records',
+          params: {'p_organization_id': organizationId},
+        ));
+    if (result is! List) return const [];
+    return result
+        .whereType<Map>()
+        .map((row) => Map<String, dynamic>.from(row))
+        .toList();
+  }
+
   Stream<List<Map<String, dynamic>>> watchPsychologistRecords() {
     final uid = userId;
     if (uid == null) return Stream.value(const []);

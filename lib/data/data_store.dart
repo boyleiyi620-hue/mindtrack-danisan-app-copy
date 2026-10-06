@@ -79,6 +79,12 @@ class DataStore extends ChangeNotifier {
 
   bool get hasAccount => accounts.current != null;
 
+  /// Asistan oturumları yalnızca sunucunun süzdüğü dizin/randevu özetlerini
+  /// okuyabilir; klinik JSON kayıtlarına hiçbir şekilde yazamaz.
+  bool get isAssistantReadOnly =>
+      accounts.current?.organizationRole == 'assistant' &&
+      accounts.current?.organizationId != null;
+
   String newId() {
     _uidCounter++;
     return '${DateTime.now().microsecondsSinceEpoch.toRadixString(16)}-${_uidCounter.toRadixString(16)}';
@@ -136,6 +142,11 @@ class DataStore extends ChangeNotifier {
       }
       data = AppData.empty();
     }
+    if (isAssistantReadOnly) {
+      // Asistan önbelleği de yalnızca sunucudan süzülen görünümle yenilenir;
+      // eski bir psikolog snapshot'ı yanlışlıkla ekrana taşınmaz.
+      data = AppData.empty();
+    }
     _restoreSyncState(u);
     notifyListeners();
     _loadRemote();
@@ -172,6 +183,23 @@ class DataStore extends ChangeNotifier {
     await _recordSubscription?.cancel();
     _recordSubscription = null;
     try {
+      if (localUser.organizationRole == 'assistant' &&
+          localUser.organizationId != null) {
+        final rows = await backend.fetchAssistantRecords(
+          localUser.organizationId!,
+        );
+        final next = appDataFromRecords(rows);
+        data = next;
+        _recordSyncAvailable = false;
+        _recordSyncActive = false;
+        await BlobStore.instance.set(
+          accounts.dataKey(localUser),
+          jsonEncode(data.toJson()),
+        );
+        notifyListeners();
+        _remoteLoading = false;
+        return;
+      }
       final rows = await backend.fetchPsychologistRecords();
       _recordSyncAvailable = true;
       if (rows.isNotEmpty) {
@@ -200,6 +228,12 @@ class DataStore extends ChangeNotifier {
     } catch (_) {
       // Eski kurulumlarda psychologist_records henüz yoktur.
       _recordSyncAvailable = false;
+      if (localUser.organizationRole == 'assistant') {
+        data = AppData.empty();
+        notifyListeners();
+        _remoteLoading = false;
+        return;
+      }
       _remoteSubscription = backend.watchState().listen(
         (remote) => _applyRemoteState(remote, localUser),
         onError: (_) {},
@@ -330,6 +364,7 @@ class DataStore extends ChangeNotifier {
   void save() {
     final u = accounts.current;
     if (u == null) return;
+    if (isAssistantReadOnly) return;
     deduplicateClientsByEmail();
     final encoded = jsonEncode(data.toJson());
     final revision = ++_saveRevision;
@@ -406,6 +441,7 @@ class DataStore extends ChangeNotifier {
     int? revision,
     UserAccount? user,
   }) async {
+    if (isAssistantReadOnly) return;
     // Arka arkaya gelen işlemlerden hiçbiri kaybolmasın: yeni kayıt, devam eden
     // uzak yazmanın arkasında kuyruğa alınır ve son durum ayrıca yazılır.
     _pendingRemoteEncoded = encoded;
