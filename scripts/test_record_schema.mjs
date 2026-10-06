@@ -4,6 +4,10 @@ const migration = await readFile(
   new URL('../supabase/migrations/20261005160000_psychologist_records.sql', import.meta.url),
   'utf8',
 );
+const rpcMigration = await readFile(
+  new URL('../supabase/migrations/20261006120000_record_sync_rpc.sql', import.meta.url),
+  'utf8',
+);
 
 const required = [
   'create table public.psychologist_records',
@@ -33,3 +37,15 @@ for (const type of [
 }
 
 console.log('Record schema checks passed.');
+
+for (const fragment of [
+  'create or replace function public.upsert_psychologist_records',
+  'record_conflict',
+  'grant execute on function public.upsert_psychologist_records(jsonb) to authenticated',
+]) {
+  if (!rpcMigration.toLowerCase().includes(fragment.toLowerCase())) {
+    throw new Error(`Kayıt RPC doğrulaması başarısız: ${fragment}`);
+  }
+}
+
+console.log('Record sync RPC checks passed.');

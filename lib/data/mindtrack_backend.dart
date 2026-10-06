@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/client.dart';
+import 'record_sync.dart';
 import 'supabase_config.dart';
 
 /// Uygulamanın tüm uzak veri işlemlerini toplayan katman.
@@ -244,6 +245,40 @@ class MindTrackBackend {
       if (updated == null) throw StateConflictException();
       return nextVersion;
     });
+  }
+
+  /// Kayıt bazlı geçiş katmanı. Eski psychologist_state akışıyla paralel
+  /// kullanılabilir; istemci her kaydı kendi beklenen sürümüyle yazar.
+  Future<List<Map<String, dynamic>>> savePsychologistRecords(
+    Iterable<RecordEnvelope> records,
+  ) async {
+    final uid = userId;
+    if (uid == null) return const [];
+    final payload = records.map((record) => record.toJson()).toList();
+    if (payload.isEmpty) return const [];
+    final result = await _guard(
+      () => _db.rpc('upsert_psychologist_records', params: {
+        'p_records': payload,
+      }),
+    );
+    if (result is! List) return const [];
+    return result
+        .whereType<Map>()
+        .map((row) => Map<String, dynamic>.from(row))
+        .toList();
+  }
+
+  Future<List<Map<String, dynamic>>> fetchPsychologistRecords() async {
+    final uid = userId;
+    if (uid == null) return const [];
+    final rows = await _guard(() => _db
+        .from('psychologist_records')
+        .select('record_type, record_id, data, record_version, deleted_at')
+        .eq('psychologist_id', uid));
+    return (rows as List)
+        .whereType<Map>()
+        .map((row) => Map<String, dynamic>.from(row))
+        .toList();
   }
 
   static bool _isMissingStateVersion(PostgrestException error) {
