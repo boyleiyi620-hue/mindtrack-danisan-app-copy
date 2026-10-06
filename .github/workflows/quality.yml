@@ -48,6 +48,9 @@ jobs:
       - name: Operational configuration checks
         run: node scripts/test_operational_config.mjs
 
+      - name: License schema checks
+        run: node scripts/test_license_schema.mjs
+
       - name: Edge Function type check
         run: deno check supabase/functions/critical-error-alert/index.ts
 
