@@ -56,7 +56,7 @@ const Map<String, String> _collectionToRecordType = {
   'financeGoals': 'finance_goal',
 };
 
-const Map<String, String> _recordTypeToCollection = {
+final Map<String, String> _recordTypeToCollection = {
   for (final entry in _collectionToRecordType.entries)
     entry.value: entry.key,
 };
