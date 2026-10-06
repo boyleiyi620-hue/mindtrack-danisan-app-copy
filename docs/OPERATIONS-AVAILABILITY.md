@@ -10,11 +10,11 @@
 - `SUPABASE_PUBLISHABLE_KEY` istemciye gömülür ve public anahtar olmalıdır.
   `service_role` veya başka bir secret anahtar Flutter derlemesine kesinlikle
   verilmez.
-- Şu anda GitHub'da `Production` ve `Preview` environment'ları var, ancak bu
-  değerler ayarlı değil. Production build'i yeniden etkinleştirmek için
-  `Production` değerleri eklenmeli; ayrı bir Supabase staging projesi kurulana
-  kadar `Preview` build'i bilerek başarısız olur. Bu dala ait Vercel Preview'ı
-  production verisiyle kullanmayın.
+- GitHub'da `Production` ve `Preview` environment'ları var. `Production`
+  ortamında `SUPABASE_URL` ve `SUPABASE_PUBLISHABLE_KEY` tanımlı; `Preview`
+  ortamında henüz ayrı bir Supabase bağlantısı yok. Ayrı bir Supabase staging
+  projesi bağlanana kadar `Preview` build'i bilerek başarısız olur. Bu dala ait
+  Vercel Preview'ı production verisiyle kullanmayın.
 
 ## Health ve uptime
 
@@ -26,10 +26,16 @@ başarısız çalıştırma bildirimi gönderir (depo bildirim ayarlarına bağl
 
 Kurulum:
 
-1. GitHub deposunda **Settings → Secrets and variables → Actions → Variables**
+1. Doğrulanmış üretim alan adını belirle.
+2. GitHub deposunda **Settings → Secrets and variables → Actions → Variables**
    altında `MINDTRACK_HEALTH_URL` değişkenini oluştur.
-2. Değeri üretim adresinin `https://.../health.json` yolu olsun.
-3. **Actions → Web uptime check → Run workflow** ile ilk kontrolü başlat.
+3. Değeri üretim adresinin `https://.../health.json` yolu olsun.
+4. **Actions → Web uptime check → Run workflow** ile ilk kontrolü başlat.
+
+`MINDTRACK_HEALTH_URL` henüz tanımlı değil; gerçek production alan adı
+doğrulanmadan önizleme URL'si bu değişkene yazılmamalıdır. Ayrıca zamanlanmış
+kontrolün çalışması için workflow dosyasının varsayılan `master` dalında
+bulunması gerekir.
 
 Yerel veya staging kontrolü:
 
