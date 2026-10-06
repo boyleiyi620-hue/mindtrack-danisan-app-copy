@@ -17,6 +17,11 @@ const required = [
   'grant execute on function public.create_organization(text) to authenticated',
 ];
 
+const hardening = await readFile(
+  new URL('../supabase/migrations/20261006130000_tenant_rls_hardening.sql', import.meta.url),
+  'utf8',
+);
+
 for (const fragment of required) {
   if (!migration.toLowerCase().includes(fragment.toLowerCase())) {
     throw new Error(`Tenant şeması doğrulaması başarısız: ${fragment}`);
@@ -24,3 +29,17 @@ for (const fragment of required) {
 }
 
 console.log('Tenant schema checks passed.');
+
+for (const fragment of [
+  'create or replace function public.is_active_clinical_member',
+  'drop policy if exists "psikolog kendi durumunu okur"',
+  'aktif klinik üyesi kendi durumunu okur',
+  'aktif klinik üyesi kendi kayıtlarını okur',
+  "m.status = 'active'",
+]) {
+  if (!hardening.toLowerCase().includes(fragment.toLowerCase())) {
+    throw new Error(`Tenant RLS doğrulaması başarısız: ${fragment}`);
+  }
+}
+
+console.log('Tenant RLS hardening checks passed.');
