@@ -42,3 +42,6 @@ file_size_limit = "20MiB"
 
 [realtime]
 enabled = true
+
+[functions.critical-error-alert]
+verify_jwt = true

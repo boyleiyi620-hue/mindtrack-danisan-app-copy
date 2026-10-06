@@ -236,6 +236,19 @@ class MindTrackBackend {
               'p_app_version': appVersion,
             },
           ));
+      if (severity == 'critical') {
+        // Owner alert delivery must not make the clinical write/reporting path
+        // fail. The Edge Function verifies this session and sends no PHI.
+        for (var attempt = 0; attempt < 3; attempt++) {
+          try {
+            await _db.functions.invoke('critical-error-alert', body: const {});
+            break;
+          } catch (_) {
+            if (attempt == 2) break;
+            await Future<void>.delayed(Duration(seconds: attempt + 1));
+          }
+        }
+      }
     } catch (_) {
       // Telemetri klinik uygulamanın çalışmasını durdurmamalı.
     }

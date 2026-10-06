@@ -43,12 +43,37 @@ uygulama içindeki senkronizasyon göstergesi ve sağlayıcı panellerindeki ala
 izlenmelidir. GitHub Actions kurtarma e-postası ayrıca göndermez; normale dönüş
 takibi gerekiyorsa harici uptime servisi bağlanmalıdır.
 
+## Kritik senkronizasyon hata bildirimi
+
+Uygulama üç kez başarısız olan senkronizasyonu `client_error_events` tablosuna
+kaydedip `critical-error-alert` Edge Function'ını çağırır. Function, oturum
+JWT'sini doğrular, olayı sunucu tarafında bulur ve webhook'a HTTPS ile yalnızca
+hata kategorisi, uygulama sürümü ve zamanı yollar. Klinik kayıt, hata mesajı,
+kullanıcı kimliği ve kurum kimliği webhook'a gönderilmez. Aynı kayıt için
+eşzamanlı tekrar bildirimini önleyen claim alanları bulunur.
+
+Her Supabase ortamında migration'ları uygulayıp function'ı deploy et:
+
+```bash
+supabase db push --project-ref <project-ref>
+supabase functions deploy critical-error-alert --project-ref <project-ref>
+supabase secrets set MINDTRACK_CRITICAL_ALERT_WEBHOOK='https://<trusted-webhook>' --project-ref <project-ref>
+```
+
+Webhook URL'si yalnızca güvenilir bir HTTPS uç noktası olmalıdır. Ayar yoksa
+function bildirim göndermez; hata olayı Supabase'de kalır. Webhook geçici hata
+verirse uygulama function'ı üç kez yeniden çağırır; claim serbest bırakılır ve
+olay sonraki çağrıda yeniden denenebilir. Supabase function secret'ı ve webhook
+ayrı staging/production projelerinde ayrı tanımlanmalıdır. Function ayrıca
+Supabase runtime'ının `SUPABASE_SECRET_KEYS` içindeki `default` secret key'ine
+ihtiyaç duyar; dashboard'da bu anahtarın etkin olduğunu doğrula.
+
 ## Limit ve alarm kontrol listesi
 
 - Supabase database, Storage, bandwidth ve Auth e-posta kullanım alarmı açılır.
 - Vercel build, function ve bandwidth limitleri izlenir.
-- `client_error_events` içindeki `critical` ve çözülmemiş hatalar günlük
-  kontrol edilir veya bir webhook/e-posta kanalına bağlanır.
+- `client_error_events` içindeki `critical` ve çözülmemiş hatalar webhook
+  bildirimleriyle izlenir; başarısız bildirimler ayrıca günlük kontrol edilir.
 - Production deploy öncesi staging health kontrolü ve Flutter CI başarılı
   olmalıdır.
 
