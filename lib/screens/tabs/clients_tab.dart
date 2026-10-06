@@ -1,3 +1,7 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/data_store.dart';
@@ -5,6 +9,7 @@ import '../../data/mindtrack_backend.dart';
 import '../../models/app_data.dart';
 import '../../models/appointment.dart';
 import '../../models/client.dart';
+import '../../models/document.dart';
 import '../../models/note.dart';
 import '../../models/plan.dart';
 import '../../models/finance.dart' as mt;
@@ -13,6 +18,9 @@ import '../../utils/formats.dart';
 import '../clients/client_edit_dialog.dart';
 import '../clients/note_editor_dialog.dart';
 import '../clients/plan_editor_dialog.dart';
+import '../pdfs/pdf_viewer_screen.dart';
+
+const _maxClientDocumentBytes = 10 * 1024 * 1024;
 
 /// Danışanlar — liste, danışan detayı, SOAP notları, tedavi planı, güvenlik planı.
 class ClientsTab extends StatefulWidget {
@@ -764,7 +772,7 @@ class _ClientsTabState extends State<ClientsTab> {
     List<Note> notes,
     List<Appointment> appts,
     List<Plan> plans,
-    List<dynamic> docs,
+    List<Document> docs,
   ) {
     switch (sub) {
       case 'appointments':
@@ -778,7 +786,7 @@ class _ClientsTabState extends State<ClientsTab> {
       case 'safety':
         return _safetyView(context, c);
       default:
-        return _overviewSubView(context, c, notes, plans);
+        return _overviewSubView(context, c, notes, plans, docs);
     }
   }
 
@@ -825,12 +833,182 @@ class _ClientsTabState extends State<ClientsTab> {
     );
   }
 
+  Widget _documentsSection(
+    BuildContext context,
+    Client client,
+    List<Document> documents,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Danışan Belgeleri',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _uploadClientDocument(context, client),
+                icon: const Icon(Icons.upload_file_outlined, size: 16),
+                label: const Text('PDF ekle'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (documents.isEmpty)
+            const Text(
+              'Bu danışana ait belge yok. Belgeler sunucuda saklanır ve yalnızca açıldığında indirilir.',
+              style: TextStyle(fontSize: 12, color: AppColors.muted),
+            )
+          else
+            for (final document in documents)
+              _clientDocumentTile(context, document),
+        ],
+      ),
+    );
+  }
+
+  Widget _clientDocumentTile(BuildContext context, Document document) {
+    final cached = widget.data.documentIsCached(document);
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      dense: true,
+      leading: const Icon(Icons.picture_as_pdf_outlined, color: Colors.red),
+      title: Text(
+        document.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        '${fmtBytes(document.size)} · ${cached ? 'Bu cihazda hazır' : 'Açılınca indirilecek'}',
+        style: const TextStyle(fontSize: 11),
+      ),
+      trailing: Wrap(
+        spacing: 0,
+        children: [
+          IconButton(
+            tooltip: 'Aç',
+            onPressed: () => _openClientDocument(context, document),
+            icon: const Icon(Icons.visibility_outlined, size: 19),
+          ),
+          IconButton(
+            tooltip: 'Sil',
+            onPressed: () => _deleteClientDocument(context, document),
+            icon: const Icon(
+              Icons.delete_outline,
+              size: 19,
+              color: AppColors.danger,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _uploadClientDocument(
+    BuildContext context,
+    Client client,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final picked = await FilePicker.pickFile(
+        dialogTitle: 'Danışan PDF belgesi seç',
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+      );
+      if (picked == null) return;
+      final name = picked.name.trim().isEmpty ? 'belge.pdf' : picked.name.trim();
+      final bytes = await picked.readAsBytes();
+      if (bytes.isEmpty || !name.toLowerCase().endsWith('.pdf')) {
+        messenger.showSnackBar(const SnackBar(content: Text('Yalnızca geçerli PDF dosyası eklenebilir.')));
+        return;
+      }
+      if (bytes.length > _maxClientDocumentBytes) {
+        messenger.showSnackBar(const SnackBar(content: Text('Dosya başına en fazla 10 MB olabilir.')));
+        return;
+      }
+      _d.documents.add(Document(
+        id: widget.data.newId(),
+        clientId: client.id,
+        name: name,
+        size: bytes.length,
+        dataUrl: 'data:application/pdf;base64,${base64Encode(bytes)}',
+      ));
+      widget.data.save();
+      if (mounted) {
+        setState(() {});
+        messenger.showSnackBar(const SnackBar(content: Text('Danışan belgesi eklendi.')));
+      }
+    } catch (_) {
+      if (mounted) {
+        messenger.showSnackBar(const SnackBar(content: Text('Belge seçilemedi.')));
+      }
+    }
+  }
+
+  Future<void> _openClientDocument(
+    BuildContext context,
+    Document document,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    if (!widget.data.documentIsCached(document) && document.storagePath.isNotEmpty) {
+      messenger.showSnackBar(const SnackBar(content: Text('Belge indiriliyor…')));
+    }
+    final bytes = await widget.data.documentBytes(document);
+    if (!mounted) return;
+    if (bytes.isEmpty) {
+      messenger.showSnackBar(const SnackBar(content: Text('Belge indirilemedi. Bağlantınızı kontrol edin.')));
+      return;
+    }
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => PdfViewerScreen(name: document.name, bytes: bytes),
+    ));
+  }
+
+  Future<void> _deleteClientDocument(
+    BuildContext context,
+    Document document,
+  ) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Belge silinsin mi?'),
+        content: Text('“${document.name}” silinecek.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Sil'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    _d.documents.removeWhere((item) => item.id == document.id);
+    widget.data.save();
+    unawaited(widget.data.purgeBlobs([document.storagePath]));
+    if (mounted) setState(() {});
+  }
+
   // ---- Genel Bakış (danışan) ----
   Widget _overviewSubView(
     BuildContext context,
     Client c,
     List<Note> notes,
     List<Plan> plans,
+    List<Document> docs,
   ) {
     final latestNote = notes.isEmpty ? null : notes.first;
     return LayoutBuilder(
@@ -839,6 +1017,8 @@ class _ClientsTabState extends State<ClientsTab> {
         final left = Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            _documentsSection(context, c, docs),
+            const SizedBox(height: 12),
             if (widget.data.accounts.current?.appMode == 'commercial') ...[
               Container(
                 padding: const EdgeInsets.all(14),
@@ -2150,12 +2330,18 @@ class _ClientsTabState extends State<ClientsTab> {
       ),
     );
     if (ok == true) {
+      final documentPaths = _d.documents
+          .where((x) => x.clientId == c.id)
+          .map((x) => x.storagePath)
+          .where((path) => path.isNotEmpty)
+          .toList();
       _d.clients.removeWhere((x) => x.id == c.id);
       _d.assessments.removeWhere((x) => x.clientId == c.id);
       _d.appointments.removeWhere((x) => x.clientId == c.id);
       _d.notes.removeWhere((x) => x.clientId == c.id);
       _d.plans.removeWhere((x) => x.clientId == c.id);
       _d.documents.removeWhere((x) => x.clientId == c.id);
+      unawaited(widget.data.purgeBlobs(documentPaths));
       if (_clientId == c.id) _clientId = null;
       widget.data.save();
       messenger

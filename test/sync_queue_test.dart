@@ -6,6 +6,7 @@ import 'package:mindtrack_danisan_app/data/data_store.dart';
 import 'package:mindtrack_danisan_app/data/sync_status.dart';
 import 'package:mindtrack_danisan_app/models/app_data.dart';
 import 'package:mindtrack_danisan_app/models/client.dart';
+import 'package:mindtrack_danisan_app/models/document.dart';
 import 'package:mindtrack_danisan_app/models/user_account.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -185,5 +186,24 @@ void main() {
     expect(pending, hasLength(1));
     expect(pending.single.id, 'pdf-1');
     expect(pending.single.bytes, [72, 105]);
+  });
+
+  test('danışan belgesinin uzak yolu yerel kayda işlenir', () {
+    final data = AppData(
+      documents: [
+        Document(
+          id: 'doc-1',
+          clientId: 'client-1',
+          name: 'rapor.pdf',
+          dataUrl: 'data:application/pdf;base64,SGk=',
+        ),
+      ],
+    );
+
+    expect(
+      stampStoragePath(data, documentsKey, 'doc-1', 'user/doc-1'),
+      isTrue,
+    );
+    expect(data.documents.single.storagePath, 'user/doc-1');
   });
 }
