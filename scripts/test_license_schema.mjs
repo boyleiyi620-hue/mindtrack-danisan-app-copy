@@ -4,7 +4,12 @@ const migration = await readFile(
   new URL('../supabase/migrations/20261006200000_licenses_and_billing.sql', import.meta.url),
   'utf8',
 );
+const visibilityFix = await readFile(
+  new URL('../supabase/migrations/20261006210000_restrict_license_visibility.sql', import.meta.url),
+  'utf8',
+);
 const sql = migration.toLowerCase();
+const visibilitySql = visibilityFix.toLowerCase();
 for (const fragment of [
   'create table public.licenses', 'create table public.license_seats',
   'create table public.payment_records', 'create table public.audit_log',
@@ -16,6 +21,17 @@ for (const fragment of [
   'klinik üyeleri kendi lisansını görür', 'klinik yöneticisi tahsilatları görür',
 ]) {
   if (!sql.includes(fragment)) throw new Error(`License schema check failed: ${fragment}`);
+}
+for (const fragment of [
+  'drop policy if exists "klinik üyeleri kendi lisansını görür"',
+  'using (public.is_organization_admin(organization_id))',
+  'create policy "psikolog kendi koltuğunu görür"',
+  'psychologist_user_id = (select auth.uid())',
+  "m.role = 'psychologist'",
+]) {
+  if (!visibilitySql.includes(fragment)) {
+    throw new Error(`License visibility check failed: ${fragment}`);
+  }
 }
 for (const forbidden of ['grant insert on public.licenses', 'grant update on public.licenses', 'grant delete on public.licenses']) {
   if (sql.includes(forbidden)) throw new Error(`Unsafe license grant: ${forbidden}`);
