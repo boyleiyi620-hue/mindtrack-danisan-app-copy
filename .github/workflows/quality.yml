@@ -40,6 +40,9 @@ jobs:
       - name: Backup schema checks
         run: node scripts/test_backup_schema.mjs
 
+      - name: Operational configuration checks
+        run: node scripts/test_operational_config.mjs
+
       - name: Analyze
         run: flutter analyze
 

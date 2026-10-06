@@ -35,6 +35,7 @@ jobs:
           node scripts/test_tenant_schema.mjs
           node scripts/test_observability_schema.mjs
           node scripts/test_backup_schema.mjs
+          node scripts/test_operational_config.mjs
           flutter test
           ./scripts/build_web.sh
 
