@@ -22,6 +22,7 @@ import 'appointment_sync.dart';
 import 'client_deduplication.dart' as client_dedup;
 import 'mindtrack_backend.dart';
 import 'binary_blobs.dart';
+import 'record_sync.dart';
 import 'sync_status.dart';
 
 /// Kullanıcıya özel veri deposu — her değişiklikte kaydeder ve ekranlara haber verir.
@@ -36,11 +37,16 @@ class DataStore extends ChangeNotifier {
   UserAccount? _pendingRemoteUser;
   Timer? _remoteSaveTimer;
   StreamSubscription<RemoteStateSnapshot?>? _remoteSubscription;
+  StreamSubscription<List<Map<String, dynamic>>>? _recordSubscription;
   Future<void> _localSaveChain = Future<void>.value();
   int _saveRevision = 0;
   int _persistedRevision = 0;
   int _remoteVersion = 0;
   bool _hasConflict = false;
+  bool _recordSyncAvailable = false;
+  bool _recordSyncActive = false;
+  AppData _remoteRecordData = AppData.empty();
+  Map<String, int> _recordVersions = <String, int>{};
 
   // --- Kalıcı senkronizasyon durumu ---------------------------------------
   // Uzak yazma başarısız olduğunda yerel snapshot diske alınır ve "kirli"
@@ -86,6 +92,8 @@ class DataStore extends ChangeNotifier {
     if (u == null) {
       _remoteSubscription?.cancel();
       _remoteSubscription = null;
+      _recordSubscription?.cancel();
+      _recordSubscription = null;
       data = AppData.empty();
       notifyListeners();
       return;
@@ -160,10 +168,42 @@ class DataStore extends ChangeNotifier {
     if (!backend.isSignedIn) return;
     _remoteLoading = true;
     await _remoteSubscription?.cancel();
-    _remoteSubscription = backend.watchState().listen(
-      (remote) => _applyRemoteState(remote, localUser),
-      onError: (_) {},
-    );
+    await _recordSubscription?.cancel();
+    _recordSubscription = null;
+    try {
+      final rows = await backend.fetchPsychologistRecords();
+      _recordSyncAvailable = true;
+      if (rows.isNotEmpty) {
+        _recordSyncActive = true;
+        _recordVersions = recordVersionsFromRows(rows);
+        final next = appDataFromRecords(rows);
+        carryLocalBinaries(next, data);
+        await _hydratePdfs(next);
+        _remoteRecordData = next;
+        data = next;
+        await BlobStore.instance.set(
+          accounts.dataKey(localUser),
+          jsonEncode(data.toJson()),
+        );
+        notifyListeners();
+        _recordSubscription = backend.watchPsychologistRecords().listen(
+          _applyRemoteRecords,
+          onError: (_) {},
+        );
+      } else {
+        _remoteSubscription = backend.watchState().listen(
+          (remote) => _applyRemoteState(remote, localUser),
+          onError: (_) {},
+        );
+      }
+    } catch (_) {
+      // Eski kurulumlarda psychologist_records henüz yoktur.
+      _recordSyncAvailable = false;
+      _remoteSubscription = backend.watchState().listen(
+        (remote) => _applyRemoteState(remote, localUser),
+        onError: (_) {},
+      );
+    }
     _remoteLoading = false;
     _resumePendingSync();
   }
@@ -209,6 +249,37 @@ class DataStore extends ChangeNotifier {
     }
   }
 
+  Future<void> _applyRemoteRecords(
+    List<Map<String, dynamic>> rows,
+  ) async {
+    if (!_recordSyncActive) return;
+    try {
+      _recordVersions = recordVersionsFromRows(rows);
+      final next = appDataFromRecords(rows);
+      if (hasUnsyncedChanges) {
+        carryLocalBinaries(next, data);
+        data = AppData.mergePreservingLocal(next, data);
+        notifyListeners();
+        unawaited(_saveRemote(jsonEncode(data.toJson())));
+        return;
+      }
+      carryLocalBinaries(next, data);
+      await _hydratePdfs(next);
+      _remoteRecordData = next;
+      data = next;
+      final user = accounts.current;
+      if (user != null) {
+        await BlobStore.instance.set(
+          accounts.dataKey(user),
+          jsonEncode(data.toJson()),
+        );
+      }
+      notifyListeners();
+    } catch (_) {
+      // Bozuk uzak kayıtlar mevcut yerel verinin üzerine yazılmaz.
+    }
+  }
+
   /// Aynı Gmail adresine ait eski/çift yerel kayıtları tek danışanda birleştirir.
   /// Randevular da korunan danışan kaydına taşınır; e-posta karşılaştırması
   /// isimden bağımsız ve küçük/büyük harf duyarsız yapılır.
@@ -251,6 +322,7 @@ class DataStore extends ChangeNotifier {
     _remoteSaveTimer?.cancel();
     _retryTimer?.cancel();
     _remoteSubscription?.cancel();
+    _recordSubscription?.cancel();
     super.dispose();
   }
 
@@ -373,10 +445,14 @@ class DataStore extends ChangeNotifier {
           // Aksi halde ücretsiz plandaki 500 MB'lık veritabanı birkaç dosyada
           // dolar ve (eski sürümdeki gibi) senkron tümüyle durur.
           final slim = await _slimForRemote(payload);
-          _remoteVersion = await backend.saveState(
-            slim,
-            expectedVersion: _remoteVersion,
-          );
+          if (_recordSyncAvailable) {
+            await _saveRecordPayload(slim);
+          } else {
+            _remoteVersion = await backend.saveState(
+              slim,
+              expectedVersion: _remoteVersion,
+            );
+          }
           await _onRemoteSaved(payloadRevision, payloadUser);
         } catch (error) {
           if (error is StateConflictException) {
@@ -391,6 +467,31 @@ class DataStore extends ChangeNotifier {
     } finally {
       _remoteSaving = false;
     }
+  }
+
+  Future<void> _saveRecordPayload(Map<String, dynamic> payload) async {
+    final next = AppData.fromJson(payload);
+    final previous = _recordSyncActive ? _remoteRecordData : AppData.empty();
+    final changes = diffAppData(previous, next);
+    final records = changes.all
+        .map((record) => record.copyWith(
+              expectedVersion: _recordVersions[
+                    '${record.recordType}:${record.recordId}'
+                  ] ??
+                  0,
+            ))
+        .toList();
+    if (records.isNotEmpty) {
+      final saved = await MindTrackBackend.instance.savePsychologistRecords(
+        records,
+      );
+      _recordVersions = {
+        ..._recordVersions,
+        ...recordVersionsFromRows(saved),
+      };
+    }
+    _recordSyncActive = true;
+    _remoteRecordData = next;
   }
 
   // ---------------- kalıcı senkronizasyon durumu ----------------

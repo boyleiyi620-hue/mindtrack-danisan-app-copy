@@ -256,11 +256,19 @@ class MindTrackBackend {
     if (uid == null) return const [];
     final payload = records.map((record) => record.toJson()).toList();
     if (payload.isEmpty) return const [];
-    final result = await _guard(
-      () => _db.rpc('upsert_psychologist_records', params: {
-        'p_records': payload,
-      }),
-    );
+    late final dynamic result;
+    try {
+      result = await _guard(
+        () => _db.rpc('upsert_psychologist_records', params: {
+          'p_records': payload,
+        }),
+      );
+    } on BackendException catch (error) {
+      if (error.message.toLowerCase().contains('record_conflict')) {
+        throw StateConflictException();
+      }
+      rethrow;
+    }
     if (result is! List) return const [];
     return result
         .whereType<Map>()
@@ -279,6 +287,15 @@ class MindTrackBackend {
         .whereType<Map>()
         .map((row) => Map<String, dynamic>.from(row))
         .toList();
+  }
+
+  Stream<List<Map<String, dynamic>>> watchPsychologistRecords() {
+    final uid = userId;
+    if (uid == null) return Stream.value(const []);
+    return _watch(
+      'psychologist_records',
+      {'psychologist_id': uid},
+    );
   }
 
   static bool _isMissingStateVersion(PostgrestException error) {

@@ -28,6 +28,14 @@ class RecordEnvelope {
         'expected_version': expectedVersion,
         if (deletedAt != null) 'deleted_at': deletedAt!.toUtc().toIso8601String(),
       };
+
+  RecordEnvelope copyWith({int? expectedVersion}) => RecordEnvelope(
+        recordType: recordType,
+        recordId: recordId,
+        data: data,
+        expectedVersion: expectedVersion ?? this.expectedVersion,
+        deletedAt: deletedAt,
+      );
 }
 
 /// Bir kaydın önceki snapshot'tan çıkarıldığını temsil eder.
@@ -138,3 +146,11 @@ AppData appDataFromRecords(Iterable<Map<String, dynamic>> rows) {
   }
   return AppData.fromJson(collections);
 }
+
+Map<String, int> recordVersionsFromRows(
+  Iterable<Map<String, dynamic>> rows,
+) => {
+      for (final row in rows)
+        '${row['record_type']}:${row['record_id']}':
+            (row['record_version'] as num?)?.toInt() ?? 0,
+    };
