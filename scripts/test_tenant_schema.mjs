@@ -43,3 +43,20 @@ for (const fragment of [
 }
 
 console.log('Tenant RLS hardening checks passed.');
+
+const membershipRpc = await readFile(
+  new URL('../supabase/migrations/20261006140000_membership_management_rpc.sql', import.meta.url),
+  'utf8',
+);
+for (const fragment of [
+  'create or replace function public.list_organization_members',
+  'create or replace function public.manage_organization_member',
+  'create or replace function public.set_organization_member_status',
+  'Bu e-posta ile kayıtlı MindTrack hesabı bulunamadı',
+  'grant execute on function public.manage_organization_member',
+]) {
+  if (!membershipRpc.toLowerCase().includes(fragment.toLowerCase())) {
+    throw new Error(`Üyelik RPC doğrulaması başarısız: ${fragment}`);
+  }
+}
+console.log('Membership management RPC checks passed.');

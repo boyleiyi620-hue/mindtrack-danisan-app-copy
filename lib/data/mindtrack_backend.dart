@@ -168,6 +168,54 @@ class MindTrackBackend {
     }
   }
 
+  Future<List<OrganizationMember>> listOrganizationMembers(
+    String organizationId,
+  ) async {
+    final result = await _guard(() => _db.rpc(
+          'list_organization_members',
+          params: {'p_organization_id': organizationId},
+        ));
+    if (result is! List) return const [];
+    return result
+        .whereType<Map>()
+        .map((row) => OrganizationMember.fromJson(
+              Map<String, dynamic>.from(row),
+            ))
+        .toList();
+  }
+
+  Future<OrganizationMember> addOrganizationMember({
+    required String organizationId,
+    required String email,
+    required String role,
+  }) async {
+    final result = await _guard(() => _db.rpc(
+          'manage_organization_member',
+          params: {
+            'p_organization_id': organizationId,
+            'p_email': email.trim().toLowerCase(),
+            'p_role': role,
+          },
+        ));
+    if (result is! Map) throw BackendException('Üyelik yanıtı geçersiz.');
+    return OrganizationMember.fromJson(Map<String, dynamic>.from(result));
+  }
+
+  Future<void> updateOrganizationMemberStatus({
+    required String organizationId,
+    required String userId,
+    required String status,
+  }) async {
+    await _guard(() => _db.rpc(
+          'set_organization_member_status',
+          params: {
+            'p_organization_id': organizationId,
+            'p_user_id': userId,
+            'p_status': status,
+          },
+        ));
+  }
+
   // ------------------------------------------------ psikologun klinik kaydı ---
 
   /// Psikologun AppData'sının uzak kopyası. Psikologun tüm klinik kaydı
@@ -1072,6 +1120,28 @@ class OrganizationMembership {
         organizationId: json['organization_id'] as String,
         role: json['role'] as String? ?? 'psychologist',
         status: json['status'] as String? ?? 'active',
+      );
+}
+
+class OrganizationMember {
+  const OrganizationMember({
+    required this.userId,
+    required this.email,
+    required this.role,
+    required this.status,
+  });
+
+  final String userId;
+  final String email;
+  final String role;
+  final String status;
+
+  factory OrganizationMember.fromJson(Map<String, dynamic> json) =>
+      OrganizationMember(
+        userId: json['user_id']?.toString() ?? '',
+        email: json['email']?.toString() ?? '',
+        role: json['role']?.toString() ?? 'psychologist',
+        status: json['status']?.toString() ?? 'active',
       );
 }
 
