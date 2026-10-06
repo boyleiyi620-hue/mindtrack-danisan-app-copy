@@ -43,6 +43,7 @@ class _ClientsTabState extends State<ClientsTab> {
   String _sub = 'overview';
 
   AppData get _d => widget.data.data;
+  bool get _readOnly => widget.data.isAssistantReadOnly;
 
   @override
   Widget build(BuildContext context) {
@@ -110,11 +111,12 @@ class _ClientsTabState extends State<ClientsTab> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      FilledButton.icon(
-                        onPressed: () => _openClientEditor(context),
-                        icon: const Icon(Icons.person_add_alt, size: 17),
-                        label: const Text('Yeni Danışan', style: TextStyle()),
-                      ),
+                      if (!_readOnly)
+                        FilledButton.icon(
+                          onPressed: () => _openClientEditor(context),
+                          icon: const Icon(Icons.person_add_alt, size: 17),
+                          label: const Text('Yeni Danışan', style: TextStyle()),
+                        ),
                     ],
                   );
                   return compact
@@ -221,11 +223,12 @@ class _ClientsTabState extends State<ClientsTab> {
               style: TextStyle(fontSize: 13, color: AppColors.muted),
             ),
             const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: () => _openClientEditor(context),
-              icon: const Icon(Icons.person_add_alt, size: 17),
-              label: const Text('İlk Danışanı Ekle', style: TextStyle()),
-            ),
+            if (!_readOnly)
+              FilledButton.icon(
+                onPressed: () => _openClientEditor(context),
+                icon: const Icon(Icons.person_add_alt, size: 17),
+                label: const Text('İlk Danışanı Ekle', style: TextStyle()),
+              ),
           ],
         ),
       ),
@@ -282,10 +285,12 @@ class _ClientsTabState extends State<ClientsTab> {
         border: Border.all(color: AppColors.border),
       ),
       child: InkWell(
-        onTap: () => setState(() {
-          _clientId = c.id;
-          _sub = 'overview';
-        }),
+        onTap: _readOnly
+            ? null
+            : () => setState(() {
+                _clientId = c.id;
+                _sub = 'overview';
+              }),
         borderRadius: BorderRadius.circular(10),
         child: Row(
           children: [
@@ -383,26 +388,28 @@ class _ClientsTabState extends State<ClientsTab> {
                 ],
               ),
             ),
-            IconButton(
-              tooltip: 'Düzenle',
-              visualDensity: VisualDensity.compact,
-              onPressed: () => _openClientEditor(context, client: c),
-              icon: const Icon(
-                Icons.edit_outlined,
-                size: 18,
-                color: AppColors.text2,
+            if (!_readOnly) ...[
+              IconButton(
+                tooltip: 'Düzenle',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => _openClientEditor(context, client: c),
+                icon: const Icon(
+                  Icons.edit_outlined,
+                  size: 18,
+                  color: AppColors.text2,
+                ),
               ),
-            ),
-            IconButton(
-              tooltip: 'Sil',
-              visualDensity: VisualDensity.compact,
-              onPressed: () => _confirmDeleteClient(context, c),
-              icon: const Icon(
-                Icons.delete_outline,
-                size: 18,
-                color: AppColors.danger,
+              IconButton(
+                tooltip: 'Sil',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => _confirmDeleteClient(context, c),
+                icon: const Icon(
+                  Icons.delete_outline,
+                  size: 18,
+                  color: AppColors.danger,
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),

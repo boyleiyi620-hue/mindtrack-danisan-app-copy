@@ -30,6 +30,7 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
   _remoteAppointmentsSubscription;
 
   AppData get _d => widget.data.data;
+  bool get _readOnly => widget.data.isAssistantReadOnly;
 
   @override
   void initState() {
@@ -44,6 +45,7 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
   }
 
   void _startRemoteAppointmentSync() {
+    if (_readOnly) return;
     final backend = MindTrackBackend.instance;
     if (!backend.isSignedIn) return;
     _remoteAppointmentsSubscription = backend
@@ -187,11 +189,12 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             _segmented(),
-            FilledButton.icon(
-              onPressed: () => _openApptDialog(context),
-              icon: const Icon(Icons.event_available, size: 16),
-              label: const Text('Yeni Randevu', style: TextStyle()),
-            ),
+            if (!_readOnly)
+              FilledButton.icon(
+                onPressed: () => _openApptDialog(context),
+                icon: const Icon(Icons.event_available, size: 16),
+                label: const Text('Yeni Randevu', style: TextStyle()),
+              ),
           ],
         );
         return compact
@@ -398,6 +401,8 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
       onTap: () {
         if (appts.isNotEmpty) {
           _openDayDialog(context, cell.date);
+        } else if (_readOnly) {
+          return;
         } else if (isPast) {
           _toast(
             context,
@@ -811,26 +816,28 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
           ),
           const SizedBox(width: 8),
           _chip(apptStatusLabel(a.status), statusColor),
-          IconButton(
-            tooltip: 'Aç',
-            visualDensity: VisualDensity.compact,
-            onPressed: () => _openApptDialog(context, appt: a),
-            icon: const Icon(
-              Icons.edit_outlined,
-              size: 18,
-              color: AppColors.text2,
+          if (!_readOnly) ...[
+            IconButton(
+              tooltip: 'Aç',
+              visualDensity: VisualDensity.compact,
+              onPressed: () => _openApptDialog(context, appt: a),
+              icon: const Icon(
+                Icons.edit_outlined,
+                size: 18,
+                color: AppColors.text2,
+              ),
             ),
-          ),
-          IconButton(
-            tooltip: 'Sil',
-            visualDensity: VisualDensity.compact,
-            onPressed: () => _confirmDelete(context, a),
-            icon: const Icon(
-              Icons.delete_outline,
-              size: 18,
-              color: AppColors.danger,
+            IconButton(
+              tooltip: 'Sil',
+              visualDensity: VisualDensity.compact,
+              onPressed: () => _confirmDelete(context, a),
+              icon: const Icon(
+                Icons.delete_outline,
+                size: 18,
+                color: AppColors.danger,
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -946,14 +953,15 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
                       child: const Text('Kapat', style: TextStyle()),
                     ),
                     const SizedBox(width: 8),
-                    FilledButton.icon(
-                      onPressed: () {
-                        Navigator.of(ctx).pop();
-                        _openApptDialog(context, date: date);
-                      },
-                      icon: const Icon(Icons.event_available, size: 15),
-                      label: const Text('Randevu Ekle', style: TextStyle()),
-                    ),
+                    if (!_readOnly)
+                      FilledButton.icon(
+                        onPressed: () {
+                          Navigator.of(ctx).pop();
+                          _openApptDialog(context, date: date);
+                        },
+                        icon: const Icon(Icons.event_available, size: 15),
+                        label: const Text('Randevu Ekle', style: TextStyle()),
+                      ),
                   ],
                 ),
               ),
@@ -968,10 +976,12 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
     final c = _d.clientById(a.clientId);
     final statusColor = _calStatusColor(a.status);
     return InkWell(
-      onTap: () {
-        Navigator.of(ctx).pop();
-        _openApptDialog(context, appt: a);
-      },
+      onTap: _readOnly
+          ? null
+          : () {
+              Navigator.of(ctx).pop();
+              _openApptDialog(context, appt: a);
+            },
       borderRadius: BorderRadius.circular(10),
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
@@ -1031,6 +1041,7 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
     Appointment? appt,
     String? date,
   }) async {
+    if (_readOnly) return;
     if (date != null && date.compareTo(todayIso()) < 0) {
       _toast(context, 'Geçmiş bir tarihe randevu eklenemez.', isError: true);
       return;
@@ -1051,6 +1062,7 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
   }
 
   Future<void> _confirmDelete(BuildContext context, Appointment a) async {
+    if (_readOnly) return;
     if (sharedAppointmentId(a) != null) {
       await _cancelSharedAppointment(context, a);
       return;
@@ -1142,6 +1154,7 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
     BuildContext context,
     Appointment appointment,
   ) async {
+    if (_readOnly) return;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(

@@ -71,6 +71,38 @@ class _SettingsTabState extends State<SettingsTab> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.data.isAssistantReadOnly) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.all(18),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Hesap Ayarları',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.text,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Asistan erişimi salt okunurdur.',
+                  style: TextStyle(fontSize: 13.5, color: AppColors.muted),
+                ),
+                const SizedBox(height: 18),
+                _profileCard(),
+                const SizedBox(height: 16),
+                _aboutCard(),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     return SingleChildScrollView(
       padding: const EdgeInsets.all(18),
       child: Center(

@@ -463,6 +463,14 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   }
 
   List<_NavItem> get _currentNavItems {
+    if (widget.data.isAssistantReadOnly) {
+      return _navItems
+          .where((item) =>
+              item.id == 'clients' ||
+              item.id == 'appointments' ||
+              item.id == 'settings')
+          .toList();
+    }
     final List<_NavItem> items = List.from(
       _navItems.take(_navItems.length - 1),
     );
@@ -828,6 +836,14 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   }
 
   void _rebuildTabBuilders() {
+    if (widget.data.isAssistantReadOnly) {
+      _tabBuilders = [
+        () => ClientsTab(data: widget.data, onNavigate: _goTab),
+        () => AppointmentsTab(data: widget.data),
+        () => SettingsTab(data: widget.data, onLogout: _logout),
+      ];
+      return;
+    }
     _tabBuilders = [
       () => OverviewTab(account: _u, data: widget.data, onNavigate: _goTab),
       () => FormsTab(data: widget.data),
