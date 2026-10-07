@@ -10,7 +10,9 @@ permissions:
 
 jobs:
   build:
-    if: "!contains(github.event.head_commit.message, '[web-build]')"
+    # Manual dispatch must always rebuild, even when the current merge commit
+    # contains the historical [web-build] marker.
+    if: "github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[web-build]')"
     runs-on: ubuntu-24.04
     environment:
       name: ${{ github.ref_name == 'master' && 'Production' || 'Preview' }}
