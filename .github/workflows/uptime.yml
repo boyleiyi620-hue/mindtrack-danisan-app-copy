@@ -15,12 +15,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Check production health endpoint
+      - name: Check production web application and bundles
         env:
-          MINDTRACK_HEALTH_URL: ${{ vars.MINDTRACK_HEALTH_URL }}
+          MINDTRACK_APP_URL: ${{ vars.MINDTRACK_APP_URL }}
         run: |
-          if [ -z "$MINDTRACK_HEALTH_URL" ]; then
-            echo 'Repository variable MINDTRACK_HEALTH_URL is required.' >&2
+          if [ -z "$MINDTRACK_APP_URL" ]; then
+            echo 'Repository variable MINDTRACK_APP_URL is required.' >&2
             exit 2
           fi
-          node scripts/check_uptime.mjs "$MINDTRACK_HEALTH_URL" 3
+          node scripts/check_uptime.mjs "$MINDTRACK_APP_URL" 3

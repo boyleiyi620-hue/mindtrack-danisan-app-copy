@@ -16,34 +16,34 @@
   projesi bağlanana kadar `Preview` build'i bilerek başarısız olur. Bu dala ait
   Vercel Preview'ı production verisiyle kullanmayın.
 
-## Health ve uptime
+## Web ve bundle uptime kontrolü
 
-Derleme çıktısında `/health.json` bulunur. GitHub Actions bu adresi 15 dakikada
-bir, üç denemeyle kontrol eder. Kontrol HTTPS, yönlendirme olmaması, HTTP 200 ve
-`mindtrack-web` hizmeti için geçerli `status: ok` JSON yanıtı bekler; istek
-10 saniyede zaman aşımına uğrar. İş akışı başarısız olduğunda GitHub Actions
-başarısız çalıştırma bildirimi gönderir (depo bildirim ayarlarına bağlıdır).
+GitHub Actions uygulama kökünü, `version.json`, `flutter_bootstrap.js` ve
+`main.dart.js` dosyalarını 15 dakikada bir, üç denemeyle kontrol eder. Bu,
+`/health.json` yolunun SPA yönlendirmesi nedeniyle `index.html` döndürmesi
+sorununu da yakalar. Kontroller HTTPS, yönlendirmesiz HTTP 200 ve beklenen
+içerik türlerini arar; her istek 10 saniyede zaman aşımına uğrar. Bu kontrol
+Supabase Auth, veritabanı veya Realtime erişimini doğrulamaz.
 
 Kurulum:
 
 1. Doğrulanmış üretim alan adını belirle.
 2. GitHub deposunda **Settings → Secrets and variables → Actions → Variables**
-   altında `MINDTRACK_HEALTH_URL` değişkenini oluştur.
-3. Değeri üretim adresinin `https://.../health.json` yolu olsun.
+   altında `MINDTRACK_APP_URL` değişkenini oluştur.
+3. Değeri üretim uygulamasının kök adresi olsun; örneğin
+   `https://psikolog-paneli.vercel.app/`.
 4. **Actions → Web uptime check → Run workflow** ile ilk kontrolü başlat.
 
-`MINDTRACK_HEALTH_URL` henüz tanımlı değil; gerçek production alan adı
-doğrulanmadan önizleme URL'si bu değişkene yazılmamalıdır. Ayrıca zamanlanmış
-kontrolün çalışması için workflow dosyasının varsayılan `master` dalında
-bulunması gerekir.
+Zamanlanmış kontrolün çalışması için workflow dosyasının varsayılan `master`
+dalında bulunması gerekir.
 
 Yerel veya staging kontrolü:
 
 ```bash
-node scripts/check_uptime.mjs https://staging.example.com/health.json 3
+node scripts/check_uptime.mjs https://staging.example.com/ 3
 ```
 
-Bu kontrol web barındırıcısının statik health dosyasını doğrular; Supabase
+Bu kontrol web barındırıcısını ve temel Flutter paketlerini doğrular; Supabase
 erişilebilirliğini veya Realtime bağlantısını ölçmez. Supabase durumu için
 uygulama içindeki senkronizasyon göstergesi ve sağlayıcı panellerindeki alarmlar
 izlenmelidir. GitHub Actions kurtarma e-postası ayrıca göndermez; normale dönüş

@@ -14,39 +14,46 @@ if (!Number.isInteger(attempts) || attempts < 1 || attempts > 10) {
   process.exit(2);
 }
 
-let healthUrl;
+let appUrl;
 try {
-  healthUrl = new URL(url);
+  appUrl = new URL(url);
 } catch {
-  console.error('Health URL geçerli bir URL olmalı.');
+  console.error('Uygulama adresi geçerli bir URL olmalı.');
   process.exit(2);
 }
-if (healthUrl.protocol !== 'https:') {
-  console.error('Health URL HTTPS kullanmalı.');
+if (appUrl.protocol !== 'https:') {
+  console.error('Uygulama adresi HTTPS kullanmalı.');
   process.exit(2);
 }
+if (!appUrl.pathname.endsWith('/')) appUrl.pathname += '/';
+
+const checks = [
+  { path: '', contentType: 'text/html' },
+  { path: 'version.json', contentType: 'application/json' },
+  { path: 'flutter_bootstrap.js', contentType: 'javascript' },
+  { path: 'main.dart.js', contentType: 'javascript' },
+];
 
 let passed = 0;
 for (let attempt = 1; attempt <= attempts; attempt += 1) {
   const started = Date.now();
   try {
-    const response = await fetch(healthUrl, {
-      redirect: 'error',
-      signal: AbortSignal.timeout(timeoutMs),
-      headers: { accept: 'application/json' },
-    });
-    const body = await response.json();
-    if (
-      response.status !== 200 ||
-      body?.service !== 'mindtrack-web' ||
-      body?.status !== 'ok' ||
-      !Array.isArray(body?.checks) ||
-      body.checks.length === 0
-    ) {
-      throw new Error(`HTTP ${response.status}, status=${body?.status}`);
+    for (const check of checks) {
+      const resourceUrl = new URL(check.path, appUrl);
+      const response = await fetch(resourceUrl, {
+        method: 'HEAD',
+        redirect: 'error',
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      const contentType = response.headers.get('content-type') ?? '';
+      if (response.status !== 200 || !contentType.includes(check.contentType)) {
+        throw new Error(
+          `${resourceUrl.pathname}: HTTP ${response.status}, content-type=${contentType}`,
+        );
+      }
     }
     passed += 1;
-    console.log(`uptime check ${attempt}/${attempts}: ok (${Date.now() - started}ms)`);
+    console.log(`uptime check ${attempt}/${attempts}: app and bundles ok (${Date.now() - started}ms)`);
   } catch (error) {
     console.error(`uptime check ${attempt}/${attempts}: failed: ${error}`);
   }
