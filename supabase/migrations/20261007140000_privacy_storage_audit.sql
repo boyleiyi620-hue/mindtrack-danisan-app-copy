@@ -25,10 +25,16 @@ begin
 end;
 $$;
 
-drop trigger if exists patients_consent_timestamp on public.patients;
-create trigger patients_consent_timestamp
-  before insert or update of consented on public.patients
-  for each row execute function public.track_patient_consent();
+do $$
+begin
+  if to_regclass('public.patients') is not null then
+    execute 'drop trigger if exists patients_consent_timestamp on public.patients';
+    execute 'create trigger patients_consent_timestamp
+      before insert or update of consented on public.patients
+      for each row execute function public.track_patient_consent()';
+  end if;
+end;
+$$;
 
 grant update (consent_version, consented_at, consent_withdrawn_at)
   on public.patients to authenticated;
@@ -108,29 +114,29 @@ begin
 end;
 $$;
 
-drop trigger if exists privacy_audit_psychologist_records on public.psychologist_records;
-create trigger privacy_audit_psychologist_records
-  after insert or update or delete on public.psychologist_records
-  for each row execute function public.capture_privacy_audit();
-
-drop trigger if exists privacy_audit_patients on public.patients;
-create trigger privacy_audit_patients
-  after insert or update or delete on public.patients
-  for each row execute function public.capture_privacy_audit();
-
-drop trigger if exists privacy_audit_appointments on public.appointments;
-create trigger privacy_audit_appointments
-  after insert or update or delete on public.appointments
-  for each row execute function public.capture_privacy_audit();
-
-drop trigger if exists privacy_audit_tasks on public.tasks;
-create trigger privacy_audit_tasks
-  after insert or update or delete on public.tasks
-  for each row execute function public.capture_privacy_audit();
-
-drop trigger if exists privacy_audit_homework on public.homework;
-create trigger privacy_audit_homework
-  after insert or update or delete on public.homework
-  for each row execute function public.capture_privacy_audit();
+do $$
+declare
+  target text;
+  trigger_name text;
+begin
+  -- Older production projects may not yet have record-level tables. Apply
+  -- each audit trigger only when both the audit table and target exist.
+  if to_regclass('public.audit_log') is null then
+    return;
+  end if;
+  foreach target in array array[
+    'psychologist_records', 'patients', 'appointments', 'tasks', 'homework'
+  ] loop
+    if to_regclass('public.' || target) is not null then
+      trigger_name := 'privacy_audit_' || target;
+      execute format('drop trigger if exists %I on public.%I', trigger_name, target);
+      execute format(
+        'create trigger %I after insert or update or delete on public.%I for each row execute function public.capture_privacy_audit()',
+        trigger_name, target
+      );
+    end if;
+  end loop;
+end;
+$$;
 
 revoke all on function public.capture_privacy_audit() from public;
