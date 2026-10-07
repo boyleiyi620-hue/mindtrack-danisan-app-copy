@@ -51,6 +51,9 @@ jobs:
       - name: License schema checks
         run: node scripts/test_license_schema.mjs
 
+      - name: Privacy and storage checks
+        run: node scripts/test_privacy_schema.mjs
+
       - name: Edge Function type check
         run: deno check supabase/functions/critical-error-alert/index.ts
 

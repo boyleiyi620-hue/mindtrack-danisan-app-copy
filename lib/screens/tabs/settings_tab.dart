@@ -1224,14 +1224,28 @@ class _SettingsTabState extends State<SettingsTab> {
       ),
     );
     if (ok != true || !mounted) return;
-    widget.data.resetAll();
-    messenger.showSnackBar(
-      const SnackBar(
-        content: Text('Tüm veriler sıfırlandı.', style: TextStyle()),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-    widget.onNavigate?.call('overview');
+    try {
+      await widget.data.resetAll();
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Tüm veriler sıfırlandı.', style: TextStyle()),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      widget.onNavigate?.call('overview');
+    } catch (_) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Veriler yerelde sıfırlandı; uzak dosya temizliği yeniden denenmeli.',
+            style: TextStyle(),
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   // ---------------- Hakkında ----------------
@@ -1341,8 +1355,8 @@ class _SettingsTabState extends State<SettingsTab> {
             '2. İşlenen Veriler: Danışan ad-soyad, iletişim bilgileri, değerlendirme cevapları, seans notları ve tedavi planı bilgileri.\n\n'
             '3. İşleme Amacı: Klinik süreç yönetimi, değerlendirme takibi ve tedavi planlaması.\n\n'
             '4. Saklama: Klinik kayıtlar bağlı sunucu hesabında ve çalışma cihazındaki uygulama önbelleğinde saklanabilir. Yetkisiz erişimi önlemek için hesap bilgilerinizi paylaşmayın.\n\n'
-            '5. Güvenlik: Şifreler tek yönlü özetleme (SHA-256) ile saklanır. Cihaz düzeyinde ek koruma için işletim sisteminizin disk şifrelemesini etkinleştirmeniz önerilir.\n\n'
-            '6. Haklarınız: KVKK kapsamında verilere erişim, düzeltme ve silme haklarınızı bu uygulamanın Ayarlar bölümünden kullanabilirsiniz.\n\n'
+            '5. Güvenlik: Uzak erişim Supabase hesabı, tenant kuralları ve Storage erişim politikalarıyla sınırlandırılır. Tarayıcıdaki yerel önbellek cihaz güvenliğine bağlıdır; ortak cihazlarda oturumu kapatın ve cihaz şifrelemesini etkinleştirin.\n\n'
+            '6. Haklarınız: KVKK kapsamındaki başvuru, düzeltme, silme ve dışa aktarma talepleri veri sorumlusu psikolog/klinik üzerinden yürütülür. Bu ekrandaki yerel sıfırlama, sunucu yedekleri veya saklama yükümlülüklerini tek başına ortadan kaldırmaz.\n\n'
             'Uyarı: Bu uygulama tıbbi tanı veya tedavi aracı değildir; bir sağlık profesyonelinin mesleki kararlarını destekleyen bir kayıt aracıdır.',
             style: TextStyle(fontSize: 13, color: AppColors.text2, height: 1.8),
           ),

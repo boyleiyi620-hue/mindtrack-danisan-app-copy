@@ -383,7 +383,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 _card(),
                 const SizedBox(height: 14),
                 Text(
-                  'Tüm verileriniz yalnızca bu cihazda saklanır.',
+                  'Verileriniz hesabınıza bağlı güvenli senkronizasyonla saklanır; çevrimdışı değişiklikler bağlantı kurulunca gönderilir.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 12.5,
@@ -514,7 +514,7 @@ class _AuthScreenState extends State<AuthScreen> {
                   child: Padding(
                     padding: EdgeInsets.only(top: 8),
                     child: Text(
-                      'KVKK / Veri İşleme Aydınlatma Metni\'ni okudum ve kabul ediyorum. Verilerim yalnızca bu cihazda saklanır.',
+                      'KVKK Aydınlatma Metni’ni okudum. Klinik veriler cihazda önbelleğe alınabilir ve yetkili sunucu hesabıyla senkronize edilir.',
                       style: TextStyle(fontSize: 12.5, color: AppColors.text2),
                     ),
                   ),

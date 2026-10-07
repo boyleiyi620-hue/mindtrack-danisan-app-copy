@@ -428,6 +428,7 @@ class MindTrackBackend {
     String? displayName,
     String? email,
     bool? consented,
+    String? consentVersion,
   }) async {
     final uid = userId;
     if (uid == null) return;
@@ -435,6 +436,9 @@ class MindTrackBackend {
       'display_name': ?displayName,
       'email': ?email,
       'consented': ?consented,
+      'consent_version': ?consentVersion,
+      if (consented == true) 'consented_at': DateTime.now().toUtc().toIso8601String(),
+      if (consented == false) 'consent_withdrawn_at': DateTime.now().toUtc().toIso8601String(),
     };
     if (payload.isEmpty) return;
     await _guard(() async {

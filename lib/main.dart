@@ -535,6 +535,7 @@ class ConsentScreen extends StatefulWidget {
 }
 
 class _ConsentScreenState extends State<ConsentScreen> {
+  static const _consentVersion = 'client-consent-v1';
   bool _agreed = false;
   bool _saving = false;
 
@@ -545,6 +546,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
       final backend = MindTrackBackend.instance;
       await backend.upsertPatientProfile(
         consented: true,
+        consentVersion: _consentVersion,
         email: backend.userEmail ?? '',
       );
     } finally {
@@ -555,7 +557,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Onam')),
+      appBar: AppBar(title: const Text('Bilgilendirme ve Onam')),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 760),
@@ -566,9 +568,9 @@ class _ConsentScreenState extends State<ConsentScreen> {
                 const Expanded(
                   child: SingleChildScrollView(
                     child: Text(
-                      'Psikolojik Danışmanlık Süreci Onam Formu\n\n'
-                      'Bu metin, psikolojik danışmanlık sürecine ilişkin bilgilendirme ve onam metnidir. '
-                      'Süreç boyunca paylaştığınız bilgilerin doğru ve güncel olmasına dikkat ediniz. '
+                      'Psikolojik danışmanlık süreci bilgilendirmesi ve onamı\n\n'
+                      'Bu ekran, kliniğinizin yayınladığı bilgilendirme ve onam metnini okuduğunuzu kaydetmek için kullanılır. '
+                      'Metin sürümü ve onam zamanı hesabınıza bağlı olarak sunucuda saklanır. '
                       'Acil durumlarda ilgili acil yardım servislerine başvurunuz.',
                     ),
                   ),
@@ -577,7 +579,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
                   value: _agreed,
                   onChanged: (value) =>
                       setState(() => _agreed = value ?? false),
-                  title: const Text('Okudum, onaylıyorum'),
+                  title: const Text('Metni okudum ve onamımı veriyorum'),
                 ),
                 SizedBox(
                   width: double.infinity,

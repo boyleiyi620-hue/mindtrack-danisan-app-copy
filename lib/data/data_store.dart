@@ -594,7 +594,9 @@ class DataStore extends ChangeNotifier {
     _lastReportedErrorAt = now;
     unawaited(MindTrackBackend.instance.reportClientError(
       category: 'sync_failure',
-      message: message,
+      // Remote telemetry must never receive backend/provider error text. The
+      // full detail remains local for the clinician's recovery UI only.
+      message: 'sync_failure',
       severity: _failures >= 3 ? 'critical' : 'error',
       appVersion: _appVersion,
     ));
@@ -863,9 +865,15 @@ class DataStore extends ChangeNotifier {
     }
   }
 
-  void resetAll() {
+  Future<void> resetAll() async {
+    final paths = <String>{
+      for (final file in data.pdfFiles) file.storagePath,
+      for (final document in data.documents) document.storagePath,
+    };
     data = AppData.empty();
     save();
+    await flushLocalWrites();
+    await purgeBlobs(paths);
   }
 
   int get sizeBytes => utf8.encode(jsonEncode(data.toJson())).length;
