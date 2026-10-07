@@ -8,8 +8,6 @@ import '../../data/mindtrack_backend.dart';
 import '../../data/sync_status.dart';
 import '../../models/user_account.dart';
 import '../../models/client.dart';
-import '../../models/note.dart';
-import '../../models/task.dart';
 import '../../theme/app_theme.dart';
 import '../auth/pin_screen.dart';
 import '../auth/pin_setup_dialog.dart';
@@ -465,6 +463,14 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   }
 
   List<_NavItem> get _currentNavItems {
+    if (widget.data.isAssistantReadOnly) {
+      return _navItems
+          .where((item) =>
+              item.id == 'clients' ||
+              item.id == 'appointments' ||
+              item.id == 'settings')
+          .toList();
+    }
     final List<_NavItem> items = List.from(
       _navItems.take(_navItems.length - 1),
     );
@@ -706,7 +712,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
                             child: ListView.separated(
                               shrinkWrap: true,
                               itemCount: results.length,
-                              separatorBuilder: (_, __) => const Divider(height: 1),
+                              separatorBuilder: (_, _) => const Divider(height: 1),
                               itemBuilder: (_, index) {
                                 final result = results[index];
                                 return ListTile(
@@ -830,6 +836,14 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   }
 
   void _rebuildTabBuilders() {
+    if (widget.data.isAssistantReadOnly) {
+      _tabBuilders = [
+        () => ClientsTab(data: widget.data, onNavigate: _goTab),
+        () => AppointmentsTab(data: widget.data),
+        () => SettingsTab(data: widget.data, onLogout: _logout),
+      ];
+      return;
+    }
     _tabBuilders = [
       () => OverviewTab(account: _u, data: widget.data, onNavigate: _goTab),
       () => FormsTab(data: widget.data),

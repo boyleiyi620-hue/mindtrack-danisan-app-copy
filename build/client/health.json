@@ -1,0 +1,5 @@
+{
+  "service": "mindtrack-web",
+  "status": "ok",
+  "checks": ["static-host", "pwa-bundle"]
+}

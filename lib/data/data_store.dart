@@ -22,6 +22,7 @@ import 'appointment_sync.dart';
 import 'client_deduplication.dart' as client_dedup;
 import 'mindtrack_backend.dart';
 import 'binary_blobs.dart';
+import 'record_sync.dart';
 import 'sync_status.dart';
 
 /// Kullanıcıya özel veri deposu — her değişiklikte kaydeder ve ekranlara haber verir.
@@ -36,11 +37,16 @@ class DataStore extends ChangeNotifier {
   UserAccount? _pendingRemoteUser;
   Timer? _remoteSaveTimer;
   StreamSubscription<RemoteStateSnapshot?>? _remoteSubscription;
+  StreamSubscription<List<Map<String, dynamic>>>? _recordSubscription;
   Future<void> _localSaveChain = Future<void>.value();
   int _saveRevision = 0;
   int _persistedRevision = 0;
   int _remoteVersion = 0;
   bool _hasConflict = false;
+  bool _recordSyncAvailable = false;
+  bool _recordSyncActive = false;
+  AppData _remoteRecordData = AppData.empty();
+  Map<String, int> _recordVersions = <String, int>{};
 
   // --- Kalıcı senkronizasyon durumu ---------------------------------------
   // Uzak yazma başarısız olduğunda yerel snapshot diske alınır ve "kirli"
@@ -52,6 +58,10 @@ class DataStore extends ChangeNotifier {
   String? _syncMessage;
   Timer? _retryTimer;
   bool _disposed = false;
+  String? _lastReportedError;
+  DateTime? _lastReportedErrorAt;
+
+  static const String _appVersion = '1.0.1+2';
 
   /// Tekrarlanan denemelerde beklenecek süreler (üstel geri çekilme).
   /// Son adımda 10 dakikada bir denemeye düşer.
@@ -73,6 +83,12 @@ class DataStore extends ChangeNotifier {
 
   bool get hasAccount => accounts.current != null;
 
+  /// Asistan oturumları yalnızca sunucunun süzdüğü dizin/randevu özetlerini
+  /// okuyabilir; klinik JSON kayıtlarına hiçbir şekilde yazamaz.
+  bool get isAssistantReadOnly =>
+      accounts.current?.organizationRole == 'assistant' &&
+      accounts.current?.organizationId != null;
+
   String newId() {
     _uidCounter++;
     return '${DateTime.now().microsecondsSinceEpoch.toRadixString(16)}-${_uidCounter.toRadixString(16)}';
@@ -84,6 +100,21 @@ class DataStore extends ChangeNotifier {
   void load() {
     final u = accounts.current;
     if (u == null) {
+      _remoteSubscription?.cancel();
+      _remoteSubscription = null;
+      _recordSubscription?.cancel();
+      _recordSubscription = null;
+      data = AppData.empty();
+      notifyListeners();
+      return;
+    }
+    final backend = MindTrackBackend.instance;
+    // Yerel klinik önbelleği yalnızca onu oluşturan Supabase hesabıyla
+    // birlikte açılabilir. Kimlik doğrulanmamış/eski oturumda gösterme.
+    if (kReleaseMode &&
+        (!backend.isSignedIn ||
+            u.authUserId == null ||
+            u.authUserId != backend.userId)) {
       _remoteSubscription?.cancel();
       _remoteSubscription = null;
       data = AppData.empty();
@@ -113,6 +144,11 @@ class DataStore extends ChangeNotifier {
           BlobStore.instance.set(recoveryKey, raw).catchError((_) {}),
         );
       }
+      data = AppData.empty();
+    }
+    if (isAssistantReadOnly) {
+      // Asistan önbelleği de yalnızca sunucudan süzülen görünümle yenilenir;
+      // eski bir psikolog snapshot'ı yanlışlıkla ekrana taşınmaz.
       data = AppData.empty();
     }
     _restoreSyncState(u);
@@ -148,10 +184,65 @@ class DataStore extends ChangeNotifier {
     if (!backend.isSignedIn) return;
     _remoteLoading = true;
     await _remoteSubscription?.cancel();
-    _remoteSubscription = backend.watchState().listen(
-      (remote) => _applyRemoteState(remote, localUser),
-      onError: (_) {},
-    );
+    await _recordSubscription?.cancel();
+    _recordSubscription = null;
+    try {
+      if (localUser.organizationRole == 'assistant' &&
+          localUser.organizationId != null) {
+        final rows = await backend.fetchAssistantRecords(
+          localUser.organizationId!,
+        );
+        final next = appDataFromRecords(rows);
+        data = next;
+        _recordSyncAvailable = false;
+        _recordSyncActive = false;
+        await BlobStore.instance.set(
+          accounts.dataKey(localUser),
+          jsonEncode(data.toJson()),
+        );
+        notifyListeners();
+        _remoteLoading = false;
+        return;
+      }
+      final rows = await backend.fetchPsychologistRecords();
+      _recordSyncAvailable = true;
+      if (rows.isNotEmpty) {
+        _recordSyncActive = true;
+        _recordVersions = recordVersionsFromRows(rows);
+        final next = appDataFromRecords(rows);
+        carryLocalBinaries(next, data);
+        await _hydratePdfs(next);
+        _remoteRecordData = next;
+        data = next;
+        await BlobStore.instance.set(
+          accounts.dataKey(localUser),
+          jsonEncode(data.toJson()),
+        );
+        notifyListeners();
+        _recordSubscription = backend.watchPsychologistRecords().listen(
+          _applyRemoteRecords,
+          onError: (_) {},
+        );
+      } else {
+        _remoteSubscription = backend.watchState().listen(
+          (remote) => _applyRemoteState(remote, localUser),
+          onError: (_) {},
+        );
+      }
+    } catch (_) {
+      // Eski kurulumlarda psychologist_records henüz yoktur.
+      _recordSyncAvailable = false;
+      if (localUser.organizationRole == 'assistant') {
+        data = AppData.empty();
+        notifyListeners();
+        _remoteLoading = false;
+        return;
+      }
+      _remoteSubscription = backend.watchState().listen(
+        (remote) => _applyRemoteState(remote, localUser),
+        onError: (_) {},
+      );
+    }
     _remoteLoading = false;
     _resumePendingSync();
   }
@@ -197,6 +288,37 @@ class DataStore extends ChangeNotifier {
     }
   }
 
+  Future<void> _applyRemoteRecords(
+    List<Map<String, dynamic>> rows,
+  ) async {
+    if (!_recordSyncActive) return;
+    try {
+      _recordVersions = recordVersionsFromRows(rows);
+      final next = appDataFromRecords(rows);
+      if (hasUnsyncedChanges) {
+        carryLocalBinaries(next, data);
+        data = AppData.mergePreservingLocal(next, data);
+        notifyListeners();
+        unawaited(_saveRemote(jsonEncode(data.toJson())));
+        return;
+      }
+      carryLocalBinaries(next, data);
+      await _hydratePdfs(next);
+      _remoteRecordData = next;
+      data = next;
+      final user = accounts.current;
+      if (user != null) {
+        await BlobStore.instance.set(
+          accounts.dataKey(user),
+          jsonEncode(data.toJson()),
+        );
+      }
+      notifyListeners();
+    } catch (_) {
+      // Bozuk uzak kayıtlar mevcut yerel verinin üzerine yazılmaz.
+    }
+  }
+
   /// Aynı Gmail adresine ait eski/çift yerel kayıtları tek danışanda birleştirir.
   /// Randevular da korunan danışan kaydına taşınır; e-posta karşılaştırması
   /// isimden bağımsız ve küçük/büyük harf duyarsız yapılır.
@@ -239,12 +361,14 @@ class DataStore extends ChangeNotifier {
     _remoteSaveTimer?.cancel();
     _retryTimer?.cancel();
     _remoteSubscription?.cancel();
+    _recordSubscription?.cancel();
     super.dispose();
   }
 
   void save() {
     final u = accounts.current;
     if (u == null) return;
+    if (isAssistantReadOnly) return;
     deduplicateClientsByEmail();
     final encoded = jsonEncode(data.toJson());
     final revision = ++_saveRevision;
@@ -321,6 +445,7 @@ class DataStore extends ChangeNotifier {
     int? revision,
     UserAccount? user,
   }) async {
+    if (isAssistantReadOnly) return;
     // Arka arkaya gelen işlemlerden hiçbiri kaybolmasın: yeni kayıt, devam eden
     // uzak yazmanın arkasında kuyruğa alınır ve son durum ayrıca yazılır.
     _pendingRemoteEncoded = encoded;
@@ -361,10 +486,14 @@ class DataStore extends ChangeNotifier {
           // Aksi halde ücretsiz plandaki 500 MB'lık veritabanı birkaç dosyada
           // dolar ve (eski sürümdeki gibi) senkron tümüyle durur.
           final slim = await _slimForRemote(payload);
-          _remoteVersion = await backend.saveState(
-            slim,
-            expectedVersion: _remoteVersion,
-          );
+          if (_recordSyncAvailable) {
+            await _saveRecordPayload(slim);
+          } else {
+            _remoteVersion = await backend.saveState(
+              slim,
+              expectedVersion: _remoteVersion,
+            );
+          }
           await _onRemoteSaved(payloadRevision, payloadUser);
         } catch (error) {
           if (error is StateConflictException) {
@@ -379,6 +508,31 @@ class DataStore extends ChangeNotifier {
     } finally {
       _remoteSaving = false;
     }
+  }
+
+  Future<void> _saveRecordPayload(Map<String, dynamic> payload) async {
+    final next = AppData.fromJson(payload);
+    final previous = _recordSyncActive ? _remoteRecordData : AppData.empty();
+    final changes = diffAppData(previous, next);
+    final records = changes.all
+        .map((record) => record.copyWith(
+              expectedVersion: _recordVersions[
+                    '${record.recordType}:${record.recordId}'
+                  ] ??
+                  0,
+            ))
+        .toList();
+    if (records.isNotEmpty) {
+      final saved = await MindTrackBackend.instance.savePsychologistRecords(
+        records,
+      );
+      _recordVersions = {
+        ..._recordVersions,
+        ...recordVersionsFromRows(saved),
+      };
+    }
+    _recordSyncActive = true;
+    _remoteRecordData = next;
   }
 
   // ---------------- kalıcı senkronizasyon durumu ----------------
@@ -422,8 +576,30 @@ class DataStore extends ChangeNotifier {
   void _onRemoteFailed(Object error) {
     _failures++;
     _lastErrorAt = DateTime.now();
-    _setPhase(SyncPhase.error, message: _describeSyncError(error));
+    final message = _describeSyncError(error);
+    _setPhase(SyncPhase.error, message: message);
+    _reportSyncError(message);
     _scheduleRetry();
+  }
+
+  void _reportSyncError(String message) {
+    final now = DateTime.now();
+    final fingerprint = '$message:${_failures > 0 ? 'sync' : 'error'}';
+    if (_lastReportedError == fingerprint &&
+        _lastReportedErrorAt != null &&
+        now.difference(_lastReportedErrorAt!) < const Duration(minutes: 5)) {
+      return;
+    }
+    _lastReportedError = fingerprint;
+    _lastReportedErrorAt = now;
+    unawaited(MindTrackBackend.instance.reportClientError(
+      category: 'sync_failure',
+      // Remote telemetry must never receive backend/provider error text. The
+      // full detail remains local for the clinician's recovery UI only.
+      message: 'sync_failure',
+      severity: _failures >= 3 ? 'critical' : 'error',
+      appVersion: _appVersion,
+    ));
   }
 
   void _scheduleRetry() {
@@ -689,9 +865,15 @@ class DataStore extends ChangeNotifier {
     }
   }
 
-  void resetAll() {
+  Future<void> resetAll() async {
+    final paths = <String>{
+      for (final file in data.pdfFiles) file.storagePath,
+      for (final document in data.documents) document.storagePath,
+    };
     data = AppData.empty();
     save();
+    await flushLocalWrites();
+    await purgeBlobs(paths);
   }
 
   int get sizeBytes => utf8.encode(jsonEncode(data.toJson())).length;

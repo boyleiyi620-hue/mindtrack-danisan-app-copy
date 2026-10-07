@@ -13,10 +13,10 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -24,6 +24,11 @@ jobs:
           channel: stable
           flutter-version: '3.47.6'
           cache: true
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: lts
 
       - name: Install dependencies
         run: flutter pub get
@@ -33,6 +38,24 @@ jobs:
 
       - name: Security header checks
         run: node scripts/test_security_headers.mjs
+
+      - name: Observability schema checks
+        run: node scripts/test_observability_schema.mjs
+
+      - name: Backup schema checks
+        run: node scripts/test_backup_schema.mjs
+
+      - name: Operational configuration checks
+        run: node scripts/test_operational_config.mjs
+
+      - name: License schema checks
+        run: node scripts/test_license_schema.mjs
+
+      - name: Privacy and storage checks
+        run: node scripts/test_privacy_schema.mjs
+
+      - name: Edge Function type check
+        run: deno check supabase/functions/critical-error-alert/index.ts
 
       - name: Analyze
         run: flutter analyze

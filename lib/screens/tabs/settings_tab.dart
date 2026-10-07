@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/crypto_utils.dart';
 import '../../data/data_store.dart';
+import '../../data/mindtrack_backend.dart';
 import '../../models/app_data.dart';
 import '../../models/user_account.dart';
 import '../../theme/app_theme.dart';
@@ -41,6 +42,7 @@ class _SettingsTabState extends State<SettingsTab> {
   final _newPw2 = TextEditingController();
   String? _profileError;
   String? _pwError;
+  Future<List<OrganizationMember>>? _membersFuture;
 
   UserAccount get _u => widget.data.accounts.current!;
   AppData get _d => widget.data.data;
@@ -51,6 +53,9 @@ class _SettingsTabState extends State<SettingsTab> {
     _name = TextEditingController(text: _u.name);
     _clinic = TextEditingController(text: _u.clinic);
     _email = TextEditingController(text: _u.email);
+    if (_u.organizationId != null && _u.organizationRole == 'admin') {
+      _membersFuture = _loadMembers();
+    }
   }
 
   @override
@@ -66,6 +71,38 @@ class _SettingsTabState extends State<SettingsTab> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.data.isAssistantReadOnly) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.all(18),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Hesap Ayarları',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.text,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Asistan erişimi salt okunurdur.',
+                  style: TextStyle(fontSize: 13.5, color: AppColors.muted),
+                ),
+                const SizedBox(height: 18),
+                _profileCard(),
+                const SizedBox(height: 16),
+                _aboutCard(),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     return SingleChildScrollView(
       padding: const EdgeInsets.all(18),
       child: Center(
@@ -96,6 +133,10 @@ class _SettingsTabState extends State<SettingsTab> {
                     children: [
                       _profileCard(),
                       const SizedBox(height: 16),
+                      if (_membersFuture != null) ...[
+                        _organizationCard(),
+                        const SizedBox(height: 16),
+                      ],
                       _modeSettingsCard(),
                       const SizedBox(height: 16),
                       _passwordCard(),
@@ -171,6 +212,199 @@ class _SettingsTabState extends State<SettingsTab> {
         ],
       ),
     );
+  }
+
+  Future<List<OrganizationMember>> _loadMembers() {
+    final organizationId = _u.organizationId;
+    if (organizationId == null || _u.organizationRole != 'admin') {
+      return Future.value(const []);
+    }
+    return MindTrackBackend.instance.listOrganizationMembers(organizationId);
+  }
+
+  Widget _organizationCard() {
+    return _card(
+      Icons.groups_outlined,
+      'Klinik Üyeleri',
+      FutureBuilder<List<OrganizationMember>>(
+        future: _membersFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Üyelik sistemi henüz etkin değil veya üyeler yüklenemedi.',
+                  style: TextStyle(fontSize: 12.5, color: AppColors.muted),
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    onPressed: _refreshMembers,
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: const Text('Tekrar dene'),
+                  ),
+                ),
+              ],
+            );
+          }
+          final members = snapshot.data ?? const <OrganizationMember>[];
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Klinik hesabına erişebilecek kullanıcıları ve durumlarını yönetin.',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: AppColors.muted,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ...members.map(_memberTile),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton.icon(
+                  onPressed: () => _showAddMemberDialog(context),
+                  icon: const Icon(Icons.person_add_alt_1, size: 16),
+                  label: const Text('Üye ekle'),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _memberTile(OrganizationMember member) {
+    final isSelf = member.userId == MindTrackBackend.instance.userId;
+    final active = member.status == 'active';
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      dense: true,
+      leading: Icon(
+        active ? Icons.person_outline : Icons.person_off_outlined,
+        color: active ? AppColors.primaryDark : AppColors.muted,
+      ),
+      title: Text(member.email, style: const TextStyle(fontSize: 13)),
+      subtitle: Text(
+        '${_roleLabel(member.role)} · ${active ? 'Aktif' : 'Askıya alınmış'}',
+        style: const TextStyle(fontSize: 11.5, color: AppColors.muted),
+      ),
+      trailing: isSelf
+          ? const Text('Siz', style: TextStyle(fontSize: 11))
+          : Switch(
+              value: active,
+              onChanged: (_) => _toggleMemberStatus(member),
+            ),
+    );
+  }
+
+  String _roleLabel(String role) {
+    switch (role) {
+      case 'admin':
+        return 'Yönetici';
+      case 'assistant':
+        return 'Asistan';
+      default:
+        return 'Psikolog';
+    }
+  }
+
+  void _refreshMembers() {
+    setState(() => _membersFuture = _loadMembers());
+  }
+
+  Future<void> _toggleMemberStatus(OrganizationMember member) async {
+    final organizationId = _u.organizationId;
+    if (organizationId == null) return;
+    try {
+      await MindTrackBackend.instance.updateOrganizationMemberStatus(
+        organizationId: organizationId,
+        userId: member.userId,
+        status: member.status == 'active' ? 'suspended' : 'active',
+      );
+      if (!mounted) return;
+      _refreshMembers();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Üye durumu güncellenemedi: $error')),
+      );
+    }
+  }
+
+  Future<void> _showAddMemberDialog(BuildContext context) async {
+    final email = TextEditingController();
+    var role = 'psychologist';
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Klinik üyesi ekle'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: email,
+                autofocus: true,
+                keyboardType: TextInputType.emailAddress,
+                decoration: const InputDecoration(labelText: 'E-posta'),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: role,
+                decoration: const InputDecoration(labelText: 'Rol'),
+                items: const [
+                  DropdownMenuItem(value: 'psychologist', child: Text('Psikolog')),
+                  DropdownMenuItem(value: 'assistant', child: Text('Asistan')),
+                ],
+                onChanged: (value) {
+                  if (value != null) setDialogState(() => role = value);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('İptal'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Ekle'),
+            ),
+          ],
+        ),
+      ),
+    );
+    final organizationId = _u.organizationId;
+    final address = email.text.trim().toLowerCase();
+    email.dispose();
+    if (result != true || organizationId == null || address.isEmpty) return;
+    try {
+      await MindTrackBackend.instance.addOrganizationMember(
+        organizationId: organizationId,
+        email: address,
+        role: role,
+      );
+      if (!mounted) return;
+      _refreshMembers();
+      ScaffoldMessenger.of(this.context).showSnackBar(
+        const SnackBar(content: Text('Klinik üyesi eklendi.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(this.context).showSnackBar(
+        SnackBar(content: Text('Üye eklenemedi: $error')),
+      );
+    }
   }
 
   // ---------------- Oturum Modu ----------------
@@ -990,14 +1224,28 @@ class _SettingsTabState extends State<SettingsTab> {
       ),
     );
     if (ok != true || !mounted) return;
-    widget.data.resetAll();
-    messenger.showSnackBar(
-      const SnackBar(
-        content: Text('Tüm veriler sıfırlandı.', style: TextStyle()),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-    widget.onNavigate?.call('overview');
+    try {
+      await widget.data.resetAll();
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Tüm veriler sıfırlandı.', style: TextStyle()),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      widget.onNavigate?.call('overview');
+    } catch (_) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Veriler yerelde sıfırlandı; uzak dosya temizliği yeniden denenmeli.',
+            style: TextStyle(),
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   // ---------------- Hakkında ----------------
@@ -1107,8 +1355,8 @@ class _SettingsTabState extends State<SettingsTab> {
             '2. İşlenen Veriler: Danışan ad-soyad, iletişim bilgileri, değerlendirme cevapları, seans notları ve tedavi planı bilgileri.\n\n'
             '3. İşleme Amacı: Klinik süreç yönetimi, değerlendirme takibi ve tedavi planlaması.\n\n'
             '4. Saklama: Klinik kayıtlar bağlı sunucu hesabında ve çalışma cihazındaki uygulama önbelleğinde saklanabilir. Yetkisiz erişimi önlemek için hesap bilgilerinizi paylaşmayın.\n\n'
-            '5. Güvenlik: Şifreler tek yönlü özetleme (SHA-256) ile saklanır. Cihaz düzeyinde ek koruma için işletim sisteminizin disk şifrelemesini etkinleştirmeniz önerilir.\n\n'
-            '6. Haklarınız: KVKK kapsamında verilere erişim, düzeltme ve silme haklarınızı bu uygulamanın Ayarlar bölümünden kullanabilirsiniz.\n\n'
+            '5. Güvenlik: Uzak erişim Supabase hesabı, tenant kuralları ve Storage erişim politikalarıyla sınırlandırılır. Tarayıcıdaki yerel önbellek cihaz güvenliğine bağlıdır; ortak cihazlarda oturumu kapatın ve cihaz şifrelemesini etkinleştirin.\n\n'
+            '6. Haklarınız: KVKK kapsamındaki başvuru, düzeltme, silme ve dışa aktarma talepleri veri sorumlusu psikolog/klinik üzerinden yürütülür. Bu ekrandaki yerel sıfırlama, sunucu yedekleri veya saklama yükümlülüklerini tek başına ortadan kaldırmaz.\n\n'
             'Uyarı: Bu uygulama tıbbi tanı veya tedavi aracı değildir; bir sağlık profesyonelinin mesleki kararlarını destekleyen bir kayıt aracıdır.',
             style: TextStyle(fontSize: 13, color: AppColors.text2, height: 1.8),
           ),

@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mindtrack_danisan_app/data/appointment_sync.dart';
 import 'package:mindtrack_danisan_app/data/client_deduplication.dart';
+import 'package:mindtrack_danisan_app/data/record_sync.dart';
 import 'package:mindtrack_danisan_app/models/app_data.dart';
 import 'package:mindtrack_danisan_app/models/appointment.dart';
 import 'package:mindtrack_danisan_app/models/assessment.dart';
@@ -45,6 +46,58 @@ void main() {
 
     expect(merged.clients.map((c) => c.id), containsAll(['remote', 'local']));
     expect(merged.notes.single.title, 'Yerel başlık');
+  });
+
+  test('kayıt bazlı değişiklik kümesi ekleme ve silmeyi ayırır', () {
+    final before = AppData(
+      clients: [Client(id: 'old', name: 'Eski')],
+      notes: [Note(id: 'same', clientId: 'old', title: 'Önceki')],
+    );
+    final after = AppData(
+      clients: [Client(id: 'new', name: 'Yeni')],
+      notes: [Note(id: 'same', clientId: 'old', title: 'Güncel')],
+    );
+
+    final changes = diffAppData(before, after);
+
+    expect(
+      changes.upserts.map((r) => '${r.recordType}:${r.recordId}'),
+      containsAll(['client:new', 'note:same']),
+    );
+    expect(
+      changes.deletes.map((r) => '${r.recordType}:${r.recordId}'),
+      contains('client:old'),
+    );
+    expect(changes.deletes.single.deletedAt, isNotNull);
+  });
+
+  test('kayıt satırları AppData modeline geri dönüştürülür', () {
+    final restored = appDataFromRecords([
+      {
+        'record_type': 'client',
+        'record_id': 'c1',
+        'data': {'id': 'c1', 'name': 'Sunucudaki Danışan'},
+        'record_version': 2,
+        'deleted_at': null,
+      },
+      {
+        'record_type': 'note',
+        'record_id': 'n1',
+        'data': {'id': 'n1', 'clientId': 'c1', 'title': 'Not'},
+        'record_version': 1,
+        'deleted_at': null,
+      },
+      {
+        'record_type': 'client',
+        'record_id': 'deleted',
+        'data': {},
+        'record_version': 3,
+        'deleted_at': '2026-10-06T10:00:00Z',
+      },
+    ]);
+
+    expect(restored.clients.single.name, 'Sunucudaki Danışan');
+    expect(restored.notes.single.title, 'Not');
   });
 
   test('AppData JSON gidiş-dönüş kayıpsız çalışır', () {

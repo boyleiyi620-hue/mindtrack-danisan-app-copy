@@ -11,10 +11,12 @@ permissions:
 jobs:
   build:
     if: "!contains(github.event.head_commit.message, '[web-build]')"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    environment:
+      name: ${{ github.ref_name == 'master' && 'Production' || 'Preview' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -23,16 +25,29 @@ jobs:
           flutter-version: '3.47.6'
           cache: true
 
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: lts
+
       - name: Build web bundles
         env:
-          SUPABASE_URL: https://aqswdmhwqhrsempoiqfv.supabase.co
-          SUPABASE_PUBLISHABLE_KEY: sb_publishable_ugqE_bZ_IyNedJMk1I_saA_-eMtQAjE
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
         run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_PUBLISHABLE_KEY" ]; then
+            echo "SUPABASE_URL variable and SUPABASE_PUBLISHABLE_KEY secret are required in the selected GitHub environment." >&2
+            exit 2
+          fi
           flutter pub get
           node scripts/test_service_worker.mjs
           node scripts/test_security_headers.mjs
           node scripts/test_record_schema.mjs
           node scripts/test_tenant_schema.mjs
+          node scripts/test_observability_schema.mjs
+          node scripts/test_backup_schema.mjs
+          node scripts/test_operational_config.mjs
+          deno check supabase/functions/critical-error-alert/index.ts
           flutter test
           ./scripts/build_web.sh
 

@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/client.dart';
+import 'record_sync.dart';
 import 'supabase_config.dart';
 
 /// Uygulamanın tüm uzak veri işlemlerini toplayan katman.
@@ -84,13 +85,25 @@ class MindTrackBackend {
 
   /// Web OAuth akışı. Supabase panelinde Google provider ve redirect URL'leri
   /// ayrıca etkinleştirilmelidir.
+  String get oauthRedirectUri {
+    final current = Uri.base;
+    final isClientPath = current.path == '/client' ||
+        current.path.startsWith('/client/');
+    return Uri(
+      scheme: current.scheme,
+      host: current.host,
+      port: current.hasPort ? current.port : null,
+      path: isClientPath ? '/client/' : '/',
+    ).toString();
+  }
+
   Future<void> signInWithGoogle() async {
     await _guard(() async {
       await _db.auth.signInWithOAuth(
         OAuthProvider.google,
         // PWA /client gibi bir alt yoldan açıldıysa OAuth dönüşü aynı ekrana
         // gelsin; yalnızca origin kullanmak danışanı giriş ekranında bırakır.
-        redirectTo: Uri.base.replace(query: '', fragment: '').toString(),
+        redirectTo: oauthRedirectUri,
         // Her tıklamada Google hesap seçicisini göster; tarayıcıdaki yanlış
         // Google oturumu sessizce seçilerek başka kullanıcıya bağlanmasın.
         queryParams: const {'prompt': 'select_account'},
@@ -127,13 +140,19 @@ class MindTrackBackend {
 
   // ---------------------------------------------------------- klinik üyeliği -
 
-  /// Kullanıcının aktif klinik üyeliğini döndürür; eski kurulumlarda tenant
-  /// migration'ı henüz çalıştırılmadıysa null döner ve giriş engellenmez.
-  Future<OrganizationMembership?> ensurePersonalOrganization({
+  /// Kullanıcının aktif klinik üyeliğini döndürür.
+  ///
+  /// Üyelik doğrulanamadığında null dönmek güvenli değildir: uygulama yerel
+  /// önbellekle açılırsa askıya alınmış veya başka bir tenant'ın verisi
+  /// gösterilebilir. Bu nedenle üretimde bağlantı/migration hatası girişte
+  /// görünür bir hata olarak yukarı taşınır.
+  Future<OrganizationMembership> ensurePersonalOrganization({
     required String fallbackName,
   }) async {
     final uid = userId;
-    if (uid == null) return null;
+    if (uid == null) {
+      throw BackendException('Sunucu hesabı doğrulanamadı.');
+    }
     try {
       final existing = await _guard(() => _db
           .from('memberships')
@@ -153,17 +172,106 @@ class MindTrackBackend {
         () => _db.rpc('create_organization', params: {'p_name': name}),
       );
       final organizationId = created?.toString();
-      if (organizationId == null || organizationId.isEmpty) return null;
+      if (organizationId == null || organizationId.isEmpty) {
+        throw BackendException('Klinik üyeliği oluşturulamadı.');
+      }
       return OrganizationMembership(
         organizationId: organizationId,
         role: 'admin',
         status: 'active',
       );
     } catch (error) {
-      // Tenant migration'ı henüz uygulanmamış canlı projede eski giriş akışı
-      // çalışmaya devam etmeli. Diğer bağlantı hataları da login'i kilitlemez;
-      // üyelik bir sonraki girişte tekrar denenir.
-      return null;
+      if (error is BackendException) rethrow;
+      throw BackendException(
+        'Klinik üyeliği doğrulanamadı. Hesabınız güvenlik nedeniyle açılmadı; '
+        'yönetici migration ve üyelik ayarlarını kontrol etmelidir.',
+      );
+    }
+  }
+
+  Future<List<OrganizationMember>> listOrganizationMembers(
+    String organizationId,
+  ) async {
+    final result = await _guard(() => _db.rpc(
+          'list_organization_members',
+          params: {'p_organization_id': organizationId},
+        ));
+    if (result is! List) return const [];
+    return result
+        .whereType<Map>()
+        .map((row) => OrganizationMember.fromJson(
+              Map<String, dynamic>.from(row),
+            ))
+        .toList();
+  }
+
+  Future<OrganizationMember> addOrganizationMember({
+    required String organizationId,
+    required String email,
+    required String role,
+  }) async {
+    final result = await _guard(() => _db.rpc(
+          'manage_organization_member',
+          params: {
+            'p_organization_id': organizationId,
+            'p_email': email.trim().toLowerCase(),
+            'p_role': role,
+          },
+        ));
+    if (result is! Map) throw BackendException('Üyelik yanıtı geçersiz.');
+    return OrganizationMember.fromJson(Map<String, dynamic>.from(result));
+  }
+
+  Future<void> updateOrganizationMemberStatus({
+    required String organizationId,
+    required String userId,
+    required String status,
+  }) async {
+    await _guard(() => _db.rpc(
+          'set_organization_member_status',
+          params: {
+            'p_organization_id': organizationId,
+            'p_user_id': userId,
+            'p_status': status,
+          },
+    ));
+  }
+
+  /// Klinik verisi göndermeden teknik hata olayını kaydeder. Raporlama
+  /// başarısız olursa asıl kullanıcı akışı etkilenmez.
+  Future<void> reportClientError({
+    required String category,
+    required String message,
+    required String severity,
+    required String appVersion,
+  }) async {
+    final uid = userId;
+    if (uid == null) return;
+    try {
+      await _guard(() => _db.rpc(
+            'report_client_error',
+            params: {
+              'p_category': category,
+              'p_message': message,
+              'p_severity': severity,
+              'p_app_version': appVersion,
+            },
+          ));
+      if (severity == 'critical') {
+        // Owner alert delivery must not make the clinical write/reporting path
+        // fail. The Edge Function verifies this session and sends no PHI.
+        for (var attempt = 0; attempt < 3; attempt++) {
+          try {
+            await _db.functions.invoke('critical-error-alert', body: const {});
+            break;
+          } catch (_) {
+            if (attempt == 2) break;
+            await Future<void>.delayed(Duration(seconds: attempt + 1));
+          }
+        }
+      }
+    } catch (_) {
+      // Telemetri klinik uygulamanın çalışmasını durdurmamalı.
     }
   }
 
@@ -246,6 +354,74 @@ class MindTrackBackend {
     });
   }
 
+  /// Kayıt bazlı geçiş katmanı. Eski psychologist_state akışıyla paralel
+  /// kullanılabilir; istemci her kaydı kendi beklenen sürümüyle yazar.
+  Future<List<Map<String, dynamic>>> savePsychologistRecords(
+    Iterable<RecordEnvelope> records,
+  ) async {
+    final uid = userId;
+    if (uid == null) return const [];
+    final payload = records.map((record) => record.toJson()).toList();
+    if (payload.isEmpty) return const [];
+    late final dynamic result;
+    try {
+      result = await _guard(
+        () => _db.rpc('upsert_psychologist_records', params: {
+          'p_records': payload,
+        }),
+      );
+    } on BackendException catch (error) {
+      if (error.message.toLowerCase().contains('record_conflict')) {
+        throw StateConflictException();
+      }
+      rethrow;
+    }
+    if (result is! List) return const [];
+    return result
+        .whereType<Map>()
+        .map((row) => Map<String, dynamic>.from(row))
+        .toList();
+  }
+
+  Future<List<Map<String, dynamic>>> fetchPsychologistRecords() async {
+    final uid = userId;
+    if (uid == null) return const [];
+    final rows = await _guard(() => _db
+        .from('psychologist_records')
+        .select('record_type, record_id, data, record_version, deleted_at')
+        .eq('psychologist_id', uid));
+    return (rows as List)
+        .whereType<Map>()
+        .map((row) => Map<String, dynamic>.from(row))
+        .toList();
+  }
+
+  /// Asistan için yalnızca danışan dizini ve randevu özetlerini döndürür.
+  /// Sunucu tarafı RPC'si not, tanı, güvenlik planı ve diğer kayıt alanlarını
+  /// hiç üretmediği için istemci tarafı filtrelemeye güvenilmez.
+  Future<List<Map<String, dynamic>>> fetchAssistantRecords(
+    String organizationId,
+  ) async {
+    final result = await _guard(() => _db.rpc(
+          'fetch_assistant_records',
+          params: {'p_organization_id': organizationId},
+        ));
+    if (result is! List) return const [];
+    return result
+        .whereType<Map>()
+        .map((row) => Map<String, dynamic>.from(row))
+        .toList();
+  }
+
+  Stream<List<Map<String, dynamic>>> watchPsychologistRecords() {
+    final uid = userId;
+    if (uid == null) return Stream.value(const []);
+    return _watch(
+      'psychologist_records',
+      {'psychologist_id': uid},
+    );
+  }
+
   static bool _isMissingStateVersion(PostgrestException error) {
     final text = '${error.code} ${error.message}'.toLowerCase();
     return text.contains('state_version') || text.contains('schema cache');
@@ -264,6 +440,7 @@ class MindTrackBackend {
     String? displayName,
     String? email,
     bool? consented,
+    String? consentVersion,
   }) async {
     final uid = userId;
     if (uid == null) return;
@@ -271,6 +448,9 @@ class MindTrackBackend {
       'display_name': ?displayName,
       'email': ?email,
       'consented': ?consented,
+      'consent_version': ?consentVersion,
+      if (consented == true) 'consented_at': DateTime.now().toUtc().toIso8601String(),
+      if (consented == false) 'consent_withdrawn_at': DateTime.now().toUtc().toIso8601String(),
     };
     if (payload.isEmpty) return;
     await _guard(() async {
@@ -412,8 +592,9 @@ class MindTrackBackend {
         if (!matchesRef && !matchesEmail) continue;
         final uid = row['client_uid']?.toString().trim() ?? '';
         final status = row['status']?.toString() ?? '';
-        if (uid.isNotEmpty && (status.isEmpty || status == 'paired'))
+        if (uid.isNotEmpty && (status.isEmpty || status == 'paired')) {
           return uid;
+        }
       }
       return '';
     }
@@ -489,7 +670,9 @@ class MindTrackBackend {
                 if (date == null || date.year >= 2099) return false;
                 if (name == null ||
                     name.isEmpty ||
-                    name == 'bilinmeyen danışan') return false;
+                    name == 'bilinmeyen danışan') {
+                  return false;
+                }
                 return true;
               })
               .map((row) => _legacyAppointment(row))
@@ -1017,6 +1200,28 @@ class OrganizationMembership {
         organizationId: json['organization_id'] as String,
         role: json['role'] as String? ?? 'psychologist',
         status: json['status'] as String? ?? 'active',
+      );
+}
+
+class OrganizationMember {
+  const OrganizationMember({
+    required this.userId,
+    required this.email,
+    required this.role,
+    required this.status,
+  });
+
+  final String userId;
+  final String email;
+  final String role;
+  final String status;
+
+  factory OrganizationMember.fromJson(Map<String, dynamic> json) =>
+      OrganizationMember(
+        userId: json['user_id']?.toString() ?? '',
+        email: json['email']?.toString() ?? '',
+        role: json['role']?.toString() ?? 'psychologist',
+        status: json['status']?.toString() ?? 'active',
       );
 }
 

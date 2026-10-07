@@ -1,0 +1,26 @@
+name: Web uptime check
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Check production web application and bundles
+        env:
+          MINDTRACK_APP_URL: ${{ vars.MINDTRACK_APP_URL }}
+        run: |
+          if [ -z "$MINDTRACK_APP_URL" ]; then
+            echo 'Repository variable MINDTRACK_APP_URL is required.' >&2
+            exit 2
+          fi
+          node scripts/check_uptime.mjs "$MINDTRACK_APP_URL" 3

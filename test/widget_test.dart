@@ -5,6 +5,8 @@ import 'package:mindtrack_danisan_app/data/crypto_utils.dart';
 import 'package:mindtrack_danisan_app/data/data_store.dart';
 import 'package:mindtrack_danisan_app/data/mindtrack_backend.dart';
 import 'package:mindtrack_danisan_app/main_psy_backup.dart';
+import 'package:mindtrack_danisan_app/models/user_account.dart';
+import 'package:mindtrack_danisan_app/screens/shell/main_shell.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -897,6 +899,46 @@ void main() {
     expect(data2.data.clients.length, 3);
     expect(data2.data.forms.length, 1);
     expect(data2.data.appointments.length, 2);
+
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('asistan yalnızca danışan ve salt okunur randevuları görür', (
+    tester,
+  ) async {
+    await useTallSurface(tester, size: const Size(600, 1400));
+    final store = await AccountStore.init();
+    final assistant = UserAccount(
+      id: 'assistant-user',
+      name: 'Klinik Asistanı',
+      email: 'assistant@example.com',
+      salt: 'test-salt',
+      pwdHash: 'test-hash',
+      createdAt: 1000,
+      appMode: 'standard',
+      organizationId: 'organization-1',
+      organizationRole: 'assistant',
+    );
+    store.setSession(assistant);
+    final data = DataStore(store, autoLoad: false);
+
+    await tester.pumpWidget(
+      MaterialApp(home: MainShell(store: store, data: data)),
+    );
+
+    expect(find.text('Danışanlar'), findsNWidgets(2));
+    expect(find.text('Formlar'), findsNothing);
+    expect(find.text('Raporlar'), findsNothing);
+    expect(find.text('Yeni Danışan'), findsNothing);
+
+    await tester.tap(find.text('Randevular').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Yeni Randevu'), findsNothing);
+
+    await tester.tap(find.text('Ayarlar'));
+    await tester.pumpAndSettle();
+    expect(find.text('Asistan erişimi salt okunurdur.'), findsOneWidget);
+    expect(find.byKey(const Key('settings-load-demo-data')), findsNothing);
 
     await tester.pumpWidget(const SizedBox());
   });
