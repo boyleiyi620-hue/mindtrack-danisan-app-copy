@@ -128,13 +128,19 @@ class MindTrackBackend {
 
   // ---------------------------------------------------------- klinik üyeliği -
 
-  /// Kullanıcının aktif klinik üyeliğini döndürür; eski kurulumlarda tenant
-  /// migration'ı henüz çalıştırılmadıysa null döner ve giriş engellenmez.
-  Future<OrganizationMembership?> ensurePersonalOrganization({
+  /// Kullanıcının aktif klinik üyeliğini döndürür.
+  ///
+  /// Üyelik doğrulanamadığında null dönmek güvenli değildir: uygulama yerel
+  /// önbellekle açılırsa askıya alınmış veya başka bir tenant'ın verisi
+  /// gösterilebilir. Bu nedenle üretimde bağlantı/migration hatası girişte
+  /// görünür bir hata olarak yukarı taşınır.
+  Future<OrganizationMembership> ensurePersonalOrganization({
     required String fallbackName,
   }) async {
     final uid = userId;
-    if (uid == null) return null;
+    if (uid == null) {
+      throw BackendException('Sunucu hesabı doğrulanamadı.');
+    }
     try {
       final existing = await _guard(() => _db
           .from('memberships')
@@ -154,17 +160,20 @@ class MindTrackBackend {
         () => _db.rpc('create_organization', params: {'p_name': name}),
       );
       final organizationId = created?.toString();
-      if (organizationId == null || organizationId.isEmpty) return null;
+      if (organizationId == null || organizationId.isEmpty) {
+        throw BackendException('Klinik üyeliği oluşturulamadı.');
+      }
       return OrganizationMembership(
         organizationId: organizationId,
         role: 'admin',
         status: 'active',
       );
     } catch (error) {
-      // Tenant migration'ı henüz uygulanmamış canlı projede eski giriş akışı
-      // çalışmaya devam etmeli. Diğer bağlantı hataları da login'i kilitlemez;
-      // üyelik bir sonraki girişte tekrar denenir.
-      return null;
+      if (error is BackendException) rethrow;
+      throw BackendException(
+        'Klinik üyeliği doğrulanamadı. Hesabınız güvenlik nedeniyle açılmadı; '
+        'yönetici migration ve üyelik ayarlarını kontrol etmelidir.',
+      );
     }
   }
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -39,7 +41,11 @@ class _AuthScreenState extends State<AuthScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _restoreOAuthUser());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_restoreOAuthUser().catchError((error) {
+        if (mounted) setState(() => _error = error.toString());
+      }));
+    });
   }
 
   @override
@@ -333,13 +339,27 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Future<void> _attachOrganization(UserAccount user) async {
-    final membership = await MindTrackBackend.instance.ensurePersonalOrganization(
-      fallbackName: user.clinic.isNotEmpty ? user.clinic : user.name,
-    );
-    if (membership == null) return;
-    user.organizationId = membership.organizationId;
-    user.organizationRole = membership.role;
-    widget.store.updateUser(user);
+    try {
+      final membership = await MindTrackBackend.instance
+          .ensurePersonalOrganization(
+        fallbackName: user.clinic.isNotEmpty ? user.clinic : user.name,
+      );
+      user.organizationId = membership.organizationId;
+      user.organizationRole = membership.role;
+      widget.store.updateUser(user);
+    } catch (error) {
+      // Membership doğrulanmadan oturumu açık bırakma. Böylece DataStore'un
+      // yerel önbelleği veya eski hesap kaydı klinik ekranını açamaz.
+      widget.store.clearSession();
+      if (MindTrackBackend.instance.isSignedIn) {
+        try {
+          await MindTrackBackend.instance.signOut();
+        } catch (_) {
+          // Asıl üyelik hatası kullanıcıya gösterilecek.
+        }
+      }
+      rethrow;
+    }
   }
 
   @override
