@@ -339,6 +339,10 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Future<void> _attachOrganization(UserAccount user) async {
+    // Flutter widget testleri Supabase'i başlatmadan yerel ekran akışını
+    // çalıştırır. Bu istisna debug/test içindir; release derlemesinde
+    // membership doğrulanmadan ana uygulama asla açılmaz.
+    if (!kReleaseMode && !MindTrackBackend.instance.isReady) return;
     try {
       final membership = await MindTrackBackend.instance
           .ensurePersonalOrganization(
