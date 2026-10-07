@@ -8,6 +8,10 @@ const rpcMigration = await readFile(
   new URL('../supabase/migrations/20261006120000_record_sync_rpc.sql', import.meta.url),
   'utf8',
 );
+const legacyMigration = await readFile(
+  new URL('../supabase/migrations/20261007195000_enable_record_sync_on_legacy_projects.sql', import.meta.url),
+  'utf8',
+);
 
 const required = [
   'create table public.psychologist_records',
@@ -49,3 +53,15 @@ for (const fragment of [
 }
 
 console.log('Record sync RPC checks passed.');
+
+for (const fragment of [
+  'create table if not exists public.psychologist_records',
+  'create or replace function public.upsert_psychologist_records',
+  'alter publication supabase_realtime add table public.psychologist_records',
+]) {
+  if (!legacyMigration.toLowerCase().includes(fragment.toLowerCase())) {
+    throw new Error(`Eski üretim senkron migration kontrolü başarısız: ${fragment}`);
+  }
+}
+
+console.log('Legacy record sync migration checks passed.');
