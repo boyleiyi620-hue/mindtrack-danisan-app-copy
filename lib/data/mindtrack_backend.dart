@@ -85,13 +85,25 @@ class MindTrackBackend {
 
   /// Web OAuth akışı. Supabase panelinde Google provider ve redirect URL'leri
   /// ayrıca etkinleştirilmelidir.
+  String get oauthRedirectUri {
+    final current = Uri.base;
+    final isClientPath = current.path == '/client' ||
+        current.path.startsWith('/client/');
+    return Uri(
+      scheme: current.scheme,
+      host: current.host,
+      port: current.hasPort ? current.port : null,
+      path: isClientPath ? '/client/' : '/',
+    ).toString();
+  }
+
   Future<void> signInWithGoogle() async {
     await _guard(() async {
       await _db.auth.signInWithOAuth(
         OAuthProvider.google,
         // PWA /client gibi bir alt yoldan açıldıysa OAuth dönüşü aynı ekrana
         // gelsin; yalnızca origin kullanmak danışanı giriş ekranında bırakır.
-        redirectTo: Uri.base.replace(query: '', fragment: '').toString(),
+        redirectTo: oauthRedirectUri,
         // Her tıklamada Google hesap seçicisini göster; tarayıcıdaki yanlış
         // Google oturumu sessizce seçilerek başka kullanıcıya bağlanmasın.
         queryParams: const {'prompt': 'select_account'},
