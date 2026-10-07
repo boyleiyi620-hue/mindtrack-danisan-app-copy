@@ -20,9 +20,14 @@ assert.match(workflow, /selected GitHub environment/);
 
 const uptime = await readFile(new URL('./check_uptime.mjs', import.meta.url), 'utf8');
 assert.match(uptime, /redirect: 'error'/);
-assert.match(uptime, /body\?\.status !== 'ok'/);
+assert.match(uptime, /appUrl\.protocol !== 'https:'/);
+assert.match(uptime, /path: 'version\.json'/);
+assert.match(uptime, /path: 'flutter_bootstrap\.js'/);
+assert.match(uptime, /path: 'main\.dart\.js'/);
+assert.match(uptime, /method: 'HEAD'/);
 assert.match(uptime, /AbortSignal\.timeout\(timeoutMs\)/);
-assert.match(uptime, /healthUrl\.protocol !== 'https:'/);
-assert.match(uptime, /body\?\.service !== 'mindtrack-web'/);
+assert.doesNotMatch(uptime, /healthUrl|body\?\.service/);
+const uptimeWorkflow = await readFile(new URL('../.github/workflows/uptime.yml', import.meta.url), 'utf8');
+assert.match(uptimeWorkflow, /MINDTRACK_APP_URL/);
 
 console.log('Operational configuration checks passed.');
