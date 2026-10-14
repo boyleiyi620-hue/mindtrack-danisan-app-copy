@@ -146,6 +146,16 @@ class AppData {
     return AppData.fromJson(merged);
   }
 
+  /// Resolves the initial remote fetch without discarding an offline snapshot.
+  /// A clean device follows the remote snapshot; a dirty device keeps local
+  /// records while also importing records that exist only on the server.
+  static AppData reconcileInitialRemote({
+    required AppData remote,
+    required AppData local,
+    required bool preserveLocalChanges,
+  }) =>
+      preserveLocalChanges ? mergePreservingLocal(remote, local) : remote;
+
   static List<Map<String, dynamic>> _mergeRecords(List remote, List local) {
     final result = <Map<String, dynamic>>[
       for (final item in remote)

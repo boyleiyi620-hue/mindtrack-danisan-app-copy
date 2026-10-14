@@ -47,6 +47,9 @@ class DataStore extends ChangeNotifier {
   bool _recordSyncActive = false;
   AppData _remoteRecordData = AppData.empty();
   Map<String, int> _recordVersions = <String, int>{};
+  final Set<String> _pendingLocalDeletes = <String>{};
+  Set<String> _lastLocalRecordKeys = <String>{};
+  String? _pendingLocalDeletesOwnerId;
 
   // --- Kalıcı senkronizasyon durumu ---------------------------------------
   // Uzak yazma başarısız olduğunda yerel snapshot diske alınır ve "kirli"
@@ -77,6 +80,8 @@ class DataStore extends ChangeNotifier {
 
   String _dirtyKey(UserAccount u) => 'mt_dirty_v2_${u.id}';
   String _syncedAtKey(UserAccount u) => 'mt_synced_at_v2_${u.id}';
+  String _pendingLocalDeletesKey(UserAccount u) =>
+      'mt_pending_deletes_v1_${u.id}';
 
   DataStore(this.accounts, {bool autoLoad = true}) {
     if (autoLoad) load();
@@ -106,6 +111,9 @@ class DataStore extends ChangeNotifier {
       _recordSubscription?.cancel();
       _recordSubscription = null;
       data = AppData.empty();
+      _pendingLocalDeletes.clear();
+      _lastLocalRecordKeys = <String>{};
+      _pendingLocalDeletesOwnerId = null;
       notifyListeners();
       return;
     }
@@ -155,9 +163,44 @@ class DataStore extends ChangeNotifier {
       // eski bir psikolog snapshot'ı yanlışlıkla ekrana taşınmaz.
       data = AppData.empty();
     }
+    _loadPendingLocalDeletes(u);
+    _lastLocalRecordKeys = recordKeysFromAppData(data);
     _restoreSyncState(u);
     notifyListeners();
     _loadRemote();
+  }
+
+  void _loadPendingLocalDeletes(UserAccount user) {
+    _pendingLocalDeletes.clear();
+    _pendingLocalDeletesOwnerId = user.id;
+    if (!kIsWeb || isAssistantReadOnly) return;
+    final raw = _prefs.getString(_pendingLocalDeletesKey(user));
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        _pendingLocalDeletes.addAll(
+          decoded
+              .map((value) => value.toString())
+              .where((value) => value.isNotEmpty),
+        );
+      }
+    } catch (_) {
+      // A damaged queue is ignored; the original local snapshot remains intact.
+    }
+  }
+
+  Future<void> _persistPendingLocalDeletes(
+    UserAccount user,
+    Set<String> keys,
+  ) async {
+    if (!kIsWeb) return;
+    final ordered = keys.toList()..sort();
+    final saved = await _prefs.setString(
+      _pendingLocalDeletesKey(user),
+      jsonEncode(ordered),
+    );
+    if (!saved) throw StateError('Silme kuyruğu yerel depoya yazılamadı.');
   }
 
   /// Kullanıcının diskte kalan senkronizasyon durumunu geri yükler.
@@ -167,7 +210,9 @@ class DataStore extends ChangeNotifier {
     _lastSyncedAt = stamped == null
         ? null
         : DateTime.fromMillisecondsSinceEpoch(stamped.round());
-    final dirty = _prefs.getBool(_dirtyKey(u)) ?? false;
+    final dirty =
+        (_prefs.getBool(_dirtyKey(u)) ?? false) ||
+        _pendingLocalDeletes.isNotEmpty;
     if (dirty) {
       _failures = 0;
       _phase = SyncPhase.pending;
@@ -198,6 +243,7 @@ class DataStore extends ChangeNotifier {
         );
         final next = appDataFromRecords(rows);
         data = next;
+        _lastLocalRecordKeys = recordKeysFromAppData(data);
         _recordSyncAvailable = false;
         _recordSyncActive = false;
         await BlobStore.instance.set(
@@ -213,15 +259,54 @@ class DataStore extends ChangeNotifier {
       if (rows.isNotEmpty) {
         _recordSyncActive = true;
         _recordVersions = recordVersionsFromRows(rows);
-        final next = appDataFromRecords(rows);
-        carryLocalBinaries(next, data);
-        await _hydratePdfs(next);
-        _remoteRecordData = next;
-        data = next;
-        await BlobStore.instance.set(
-          accounts.dataKey(localUser),
-          jsonEncode(data.toJson()),
+        final remoteData = appDataFromRecords(rows);
+        carryLocalBinaries(remoteData, data);
+        await _hydratePdfs(remoteData);
+        if (kIsWeb &&
+            (_logoutPreparing || accounts.current?.id != localUser.id)) {
+          _remoteLoading = false;
+          return;
+        }
+        // The first record fetch used to replace the local snapshot directly,
+        // unlike later Realtime updates. On web, preserve a pending offline
+        // snapshot and let _resumePendingSync diff it against this remote base.
+        _remoteRecordData = remoteData;
+        final preserveLocalChanges =
+            kIsWeb &&
+            (hasUnsyncedChanges ||
+                _pendingLocalDeletes.isNotEmpty ||
+                _saveRevision > _persistedRevision ||
+                _pendingRemoteEncoded != null ||
+                _remoteSaving);
+        data = AppData.reconcileInitialRemote(
+          remote: remoteData,
+          local: data,
+          preserveLocalChanges: preserveLocalChanges,
         );
+        if (preserveLocalChanges) {
+          data = removeRecordsByKey(data, _pendingLocalDeletes);
+        }
+        _lastLocalRecordKeys = recordKeysFromAppData(data);
+        final encoded = jsonEncode(data.toJson());
+        if (kIsWeb) {
+          await _persistLoadedSnapshot(localUser, encoded);
+        } else {
+          await BlobStore.instance.set(accounts.dataKey(localUser), encoded);
+        }
+        if (kIsWeb &&
+            (_logoutPreparing || accounts.current?.id != localUser.id)) {
+          _remoteLoading = false;
+          return;
+        }
+        if (preserveLocalChanges) {
+          unawaited(
+            _saveRemote(
+              encoded,
+              revision: _saveRevision,
+              user: localUser,
+            ),
+          );
+        }
         notifyListeners();
         _recordSubscription = backend.watchPsychologistRecords().listen(
           _applyRemoteRecords,
@@ -251,6 +336,21 @@ class DataStore extends ChangeNotifier {
     _resumePendingSync();
   }
 
+  Future<void> _persistLoadedSnapshot(UserAccount user, String encoded) async {
+    final write = _localSaveChain.then((_) async {
+      if (kIsWeb && (_logoutPreparing || accounts.current?.id != user.id)) {
+        return;
+      }
+      await BlobStore.instance.set(accounts.dataKey(user), encoded);
+    });
+    _localSaveChain = write.catchError((Object error) {
+      _onRemoteFailed(
+        StateError('Yerel kayıt tamamlanamadı: ${_describeSyncError(error)}'),
+      );
+    });
+    await _localSaveChain;
+  }
+
   Future<void> _applyRemoteState(
     RemoteStateSnapshot? snapshot,
     UserAccount localUser,
@@ -268,7 +368,11 @@ class DataStore extends ChangeNotifier {
         _remoteVersion = snapshot.version;
         final remoteData = AppData.fromJson(snapshot.data);
         carryLocalBinaries(remoteData, data);
-        data = AppData.mergePreservingLocal(remoteData, data);
+        data = removeRecordsByKey(
+          AppData.mergePreservingLocal(remoteData, data),
+          _pendingLocalDeletes,
+        );
+        _lastLocalRecordKeys = recordKeysFromAppData(data);
         final merged = jsonEncode(data.toJson());
         unawaited(BlobStore.instance.set(accounts.dataKey(localUser), merged));
         notifyListeners();
@@ -288,6 +392,7 @@ class DataStore extends ChangeNotifier {
       }
       final encoded = jsonEncode(next.toJson());
       data = next;
+      _lastLocalRecordKeys = recordKeysFromAppData(data);
       await BlobStore.instance.set(accounts.dataKey(localUser), encoded);
       notifyListeners();
       if (removedDuplicates) _saveRemote(encoded);
@@ -303,7 +408,11 @@ class DataStore extends ChangeNotifier {
       final next = appDataFromRecords(rows);
       if (hasUnsyncedChanges) {
         carryLocalBinaries(next, data);
-        data = AppData.mergePreservingLocal(next, data);
+        data = removeRecordsByKey(
+          AppData.mergePreservingLocal(next, data),
+          _pendingLocalDeletes,
+        );
+        _lastLocalRecordKeys = recordKeysFromAppData(data);
         notifyListeners();
         unawaited(_saveRemote(jsonEncode(data.toJson())));
         return;
@@ -313,6 +422,7 @@ class DataStore extends ChangeNotifier {
       if (_logoutPreparing) return;
       _remoteRecordData = next;
       data = next;
+      _lastLocalRecordKeys = recordKeysFromAppData(data);
       final user = accounts.current;
       if (user != null) {
         await BlobStore.instance.set(
@@ -377,6 +487,15 @@ class DataStore extends ChangeNotifier {
     if (u == null || _logoutPreparing) return;
     if (isAssistantReadOnly) return;
     deduplicateClientsByEmail();
+    if (kIsWeb) {
+      final currentKeys = recordKeysFromAppData(data);
+      _pendingLocalDeletes.addAll(
+        _lastLocalRecordKeys.difference(currentKeys).map(recordKeyHash),
+      );
+      _pendingLocalDeletes.removeAll(currentKeys.map(recordKeyHash));
+      _lastLocalRecordKeys = currentKeys;
+    }
+    final pendingDeletes = Set<String>.from(_pendingLocalDeletes);
     final encoded = jsonEncode(data.toJson());
     final revision = ++_saveRevision;
     // Persist the dirty marker before the data snapshot. If the tab closes
@@ -386,6 +505,7 @@ class DataStore extends ChangeNotifier {
     notifyListeners();
     final localWrite = _localSaveChain.then((_) async {
       await dirtyWrite;
+      if (kIsWeb) await _persistPendingLocalDeletes(u, pendingDeletes);
       await BlobStore.instance.set(accounts.dataKey(u), encoded);
       _persistedRevision = revision;
       // A user switch while IndexedDB is writing must not upload this snapshot
@@ -563,6 +683,18 @@ class DataStore extends ChangeNotifier {
       if (revision != _saveRevision || _pendingRemoteEncoded != null) {
         await _markDirty(u);
       } else {
+        if (kIsWeb && _pendingLocalDeletes.isNotEmpty) {
+          await _persistPendingLocalDeletes(u, <String>{});
+          if (revision != _saveRevision || _pendingRemoteEncoded != null) {
+            await _markDirty(u);
+            await _persistPendingLocalDeletes(
+              u,
+              Set<String>.from(_pendingLocalDeletes),
+            );
+          } else {
+            _pendingLocalDeletes.clear();
+          }
+        }
         await _prefs.setDouble(
           _syncedAtKey(u),
           _lastSyncedAt!.millisecondsSinceEpoch.toDouble(),
@@ -661,7 +793,7 @@ class DataStore extends ChangeNotifier {
   void _resumePendingSync() {
     final u = accounts.current;
     if (u == null || _disposed) return;
-    if (!(_prefs.getBool(_dirtyKey(u)) ?? false)) return;
+    if (!hasUnsyncedChanges) return;
     if (!MindTrackBackend.instance.isSignedIn) return;
     unawaited(_resumePendingSyncAfterLocalWrites(u));
   }
@@ -669,7 +801,7 @@ class DataStore extends ChangeNotifier {
   Future<void> _resumePendingSyncAfterLocalWrites(UserAccount user) async {
     await _localSaveChain;
     if (_disposed || accounts.current?.id != user.id) return;
-    if (!(_prefs.getBool(_dirtyKey(user)) ?? false)) return;
+    if (!hasUnsyncedChanges) return;
     if (_persistedRevision < _saveRevision) {
       try {
         await _markDirty(user);
@@ -694,7 +826,10 @@ class DataStore extends ChangeNotifier {
   bool get hasUnsyncedChanges {
     final u = accounts.current;
     if (u == null) return false;
-    return _prefs.getBool(_dirtyKey(u)) ?? false;
+    return (_prefs.getBool(_dirtyKey(u)) ?? false) ||
+        (kIsWeb &&
+            _pendingLocalDeletesOwnerId == u.id &&
+            _pendingLocalDeletes.isNotEmpty);
   }
 
   /// Senkronizasyonun anlık durumu — arayüz bunu dinleyip kullanıcıya gösterir.
@@ -791,6 +926,10 @@ class DataStore extends ChangeNotifier {
       await BlobStore.instance.removeUserData(user.id);
       await _prefs.remove(_dirtyKey(user));
       await _prefs.remove(_syncedAtKey(user));
+      await _prefs.remove(_pendingLocalDeletesKey(user));
+      _pendingLocalDeletes.clear();
+      _lastLocalRecordKeys = <String>{};
+      _pendingLocalDeletesOwnerId = null;
       data = AppData.empty();
       _setPhase(SyncPhase.idle);
       notifyListeners();

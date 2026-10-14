@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
+
 import '../models/app_data.dart';
 
 /// AppData içindeki bir kaydın sunucuya taşınan biçimi.
@@ -123,6 +125,36 @@ RecordChangeSet diffAppData(AppData previous, AppData current) {
     }
   }
   return RecordChangeSet(upserts: upserts, deletes: deletes);
+}
+
+Set<String> recordKeysFromAppData(AppData value) => {
+      for (final record in recordsFromAppData(value))
+        '${record.recordType}:${record.recordId}',
+    };
+
+String recordKeyHash(String key) => sha256.convert(utf8.encode(key)).toString();
+
+Set<String> removedRecordKeys(AppData previous, AppData current) =>
+    recordKeysFromAppData(previous)
+        .difference(recordKeysFromAppData(current))
+        .map(recordKeyHash)
+        .toSet();
+
+/// Removes locally deleted records after a remote/local union merge. The
+/// persisted queue contains hashes, not record ids or clinical payloads.
+AppData removeRecordsByKey(AppData value, Set<String> keys) {
+  if (keys.isEmpty) return value;
+  final json = value.toJson();
+  for (final entry in _collectionToRecordType.entries) {
+    final records = json[entry.key];
+    if (records is! List) continue;
+    json[entry.key] = records.where((item) {
+      if (item is! Map) return true;
+      final id = item['id']?.toString().trim();
+      return id == null || !keys.contains(recordKeyHash('${entry.value}:$id'));
+    }).toList();
+  }
+  return AppData.fromJson(json);
 }
 
 Map<String, RecordEnvelope> _index(Iterable<RecordEnvelope> records) => {

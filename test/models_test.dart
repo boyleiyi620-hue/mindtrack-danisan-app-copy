@@ -48,6 +48,77 @@ void main() {
     expect(merged.notes.single.title, 'Yerel başlık');
   });
 
+  test('ilk uzak yükleme bekleyen yerel snapshotı ezmez', () {
+    final remote = AppData(
+      clients: [
+        Client(id: 'shared', name: 'Sunucudaki eski ad'),
+        Client(id: 'remote-only', name: 'Başka cihazdan gelen'),
+      ],
+    );
+    final local = AppData(
+      clients: [
+        Client(id: 'shared', name: 'Çevrimdışı güncel ad'),
+        Client(id: 'local-only', name: 'Çevrimdışı yeni kayıt'),
+      ],
+    );
+
+    final pending = AppData.reconcileInitialRemote(
+      remote: remote,
+      local: local,
+      preserveLocalChanges: true,
+    );
+    final clean = AppData.reconcileInitialRemote(
+      remote: remote,
+      local: local,
+      preserveLocalChanges: false,
+    );
+
+    expect(pending.clientById('shared')?.name, 'Çevrimdışı güncel ad');
+    expect(pending.clientById('local-only')?.name, 'Çevrimdışı yeni kayıt');
+    expect(pending.clientById('remote-only')?.name, 'Başka cihazdan gelen');
+    expect(clean.clients.map((client) => client.id), ['shared', 'remote-only']);
+    expect(clean.clientById('shared')?.name, 'Sunucudaki eski ad');
+  });
+
+  test('çevrimdışı silmeler uzak kayıt birleştirmesinde korunur', () {
+    final previous = AppData(
+      clients: [
+        Client(id: 'shared', name: 'Önceki ad'),
+        Client(id: 'deleted', name: 'Çevrimdışı silinen'),
+      ],
+      notes: [Note(id: 'deleted-note', clientId: 'shared', title: 'Silinen')],
+    );
+    final local = AppData(
+      clients: [Client(id: 'shared', name: 'Çevrimdışı güncel ad')],
+    );
+    final remote = AppData(
+      clients: [
+        Client(id: 'shared', name: 'Sunucudaki eski ad'),
+        Client(id: 'deleted', name: 'Uzakta duran'),
+        Client(id: 'remote-only', name: 'Başka cihazdan gelen'),
+      ],
+      notes: [Note(id: 'deleted-note', clientId: 'shared', title: 'Silinen')],
+    );
+
+    final tombstones = removedRecordKeys(previous, local);
+    final merged = removeRecordsByKey(
+      AppData.mergePreservingLocal(remote, local),
+      tombstones,
+    );
+
+    expect(
+      tombstones,
+      containsAll([
+        recordKeyHash('client:deleted'),
+        recordKeyHash('note:deleted-note'),
+      ]),
+    );
+    expect(merged.clientById('deleted'), isNull);
+    expect(merged.notes, isEmpty);
+    expect(merged.clientById('shared')?.name, 'Çevrimdışı güncel ad');
+    expect(merged.clientById('remote-only')?.name, 'Başka cihazdan gelen');
+  });
+
   test('kayıt bazlı değişiklik kümesi ekleme ve silmeyi ayırır', () {
     final before = AppData(
       clients: [Client(id: 'old', name: 'Eski')],
