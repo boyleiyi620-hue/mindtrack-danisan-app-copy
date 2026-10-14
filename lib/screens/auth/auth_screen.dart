@@ -112,20 +112,6 @@ class _AuthScreenState extends State<AuthScreen> {
     if (mounted) _goHome();
   }
 
-  Future<void> _googleLogin() async {
-    setState(() {
-      _error = null;
-      _busy = true;
-    });
-    try {
-      await MindTrackBackend.instance.signInWithGoogle();
-    } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
     setState(() {
@@ -552,11 +538,6 @@ class _AuthScreenState extends State<AuthScreen> {
                         fontSize: 15, fontWeight: FontWeight.w600)),
           ),
           const SizedBox(height: 10),
-          OutlinedButton.icon(
-            onPressed: _busy ? null : _googleLogin,
-            icon: const Icon(Icons.account_circle_outlined),
-            label: const Text('Google ile devam et'),
-          ),
           if (_mode == AuthMode.login) ...[
             const SizedBox(height: 4),
             TextButton.icon(

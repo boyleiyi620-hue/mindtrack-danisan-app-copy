@@ -286,19 +286,6 @@ class _LoginScreenState extends State<LoginScreen> {
         .showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> _googleLogin() async {
-    setState(() => _loading = true);
-    try {
-      await MindTrackBackend.instance.signInWithGoogle();
-    } on BackendException catch (e) {
-      _showError('Google girişi başlatılamadı: ${e.message}');
-    } catch (e) {
-      _showError('Google girişi başlatılamadı: $e');
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
   Future<void> _emailCodeLogin() async {
     final email = _email.text.trim().toLowerCase();
     if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]{2,}$').hasMatch(email)) {
@@ -419,14 +406,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 const SizedBox(height: 10),
-                OutlinedButton.icon(
-                  onPressed: _loading ? null : _googleLogin,
-                  icon: const Icon(Icons.account_circle_outlined),
-                  label: const Text('Google ile devam et'),
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 50),
-                  ),
-                ),
                 TextButton.icon(
                   onPressed: _loading || _isReg ? null : _emailCodeLogin,
                   icon: const Icon(Icons.mark_email_read_outlined, size: 18),
