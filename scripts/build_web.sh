@@ -59,6 +59,7 @@ build_target() {
   # Flutter'ın web çıktısında kaynak web/ altındaki özel statik dosyalar
   # garanti edilmediğinden PWA güncelleme/kayıt arayüzünü açıkça kopyala.
   cp "$WEB_DIR/pwa_update.js" "$BUILD_DIR/$output/pwa_update.js"
+  cp "$WEB_DIR/secure_local_storage.js" "$BUILD_DIR/$output/secure_local_storage.js"
   cp "$WEB_DIR/health.json" "$BUILD_DIR/$output/health.json"
   # Uygulama paketlerini tarayıcıda cache'le; Supabase API istekleri service worker
   # kapsamı dışında bırakılır.

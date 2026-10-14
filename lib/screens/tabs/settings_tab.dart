@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/crypto_utils.dart';
@@ -778,8 +779,9 @@ class _SettingsTabState extends State<SettingsTab> {
     await PinSetupDialog.show(
       context,
       account: _u,
-      onChanged: () {
+      onChanged: () async {
         widget.data.accounts.updateUser(_u);
+        if (kIsWeb) await widget.data.accounts.flushUserWrites();
         widget.onProfileChanged?.call();
       },
       onLockRequest: widget.onLockRequest,

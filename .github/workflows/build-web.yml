@@ -42,6 +42,7 @@ jobs:
           flutter pub get
           node scripts/test_service_worker.mjs
           node scripts/test_security_headers.mjs
+          node scripts/test_web_security.mjs
           node scripts/test_record_schema.mjs
           node scripts/test_tenant_schema.mjs
           node scripts/test_observability_schema.mjs

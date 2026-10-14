@@ -1,6 +1,10 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../data/blob_store.dart';
 import '../../data/crypto_utils.dart';
 import '../../models/user_account.dart';
 import '../../theme/app_theme.dart';
@@ -16,15 +20,16 @@ class PinSetupDialog extends StatefulWidget {
   });
 
   final UserAccount account;
-  final VoidCallback onChanged;
+  final FutureOr<void> Function() onChanged;
   final VoidCallback? onLockRequest;
 
   @override
   State<PinSetupDialog> createState() => _PinSetupDialogState();
 
-  static Future<void> show(BuildContext context, {
+  static Future<void> show(
+    BuildContext context, {
     required UserAccount account,
-    required VoidCallback onChanged,
+    required FutureOr<void> Function() onChanged,
     VoidCallback? onLockRequest,
   }) {
     return showDialog<void>(
@@ -42,6 +47,7 @@ class _PinSetupDialogState extends State<PinSetupDialog> {
   final _pin = TextEditingController();
   int _timeout = 5;
   String? _error;
+  bool _saving = false;
 
   @override
   void dispose() {
@@ -49,25 +55,90 @@ class _PinSetupDialogState extends State<PinSetupDialog> {
     super.dispose();
   }
 
-  void _save() {
+  Future<void> _save() async {
+    if (_saving) return;
     final pin = _pin.text.trim();
     if (!RegExp(r'^\d{4,6}$').hasMatch(pin)) {
       setState(() => _error = 'PIN 4-6 haneli olmalıdır.');
       return;
     }
-    widget.account.pinHash = hashPassword(pin, widget.account.salt);
-    widget.account.lockTimeout = _timeout;
-    widget.onChanged();
-    Navigator.of(context).pop();
+
+    final previousHash = widget.account.pinHash;
+    final previousTimeout = widget.account.lockTimeout;
+    if (!kIsWeb) {
+      widget.account.pinHash = hashPassword(pin, widget.account.salt);
+      widget.account.lockTimeout = _timeout;
+      widget.onChanged();
+      Navigator.of(context).pop();
+      return;
+    }
+
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      widget.account.pinHash = await BlobStore.instance.hashWebPin(pin);
+      widget.account.lockTimeout = _timeout;
+      await widget.onChanged();
+      if (mounted) Navigator.of(context).pop();
+    } catch (_) {
+      widget.account.pinHash = previousHash;
+      widget.account.lockTimeout = previousTimeout;
+      if (mounted) {
+        setState(
+          () => _error = 'PIN güvenli biçimde kaydedilemedi. Yeniden deneyin.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
-  void _disable() {
+  Future<void> _disable() async {
+    if (_saving) return;
+    final previousHash = widget.account.pinHash;
+    final previousTimeout = widget.account.lockTimeout;
     widget.account.pinHash = null;
     widget.account.lockTimeout = 0;
-    widget.onChanged();
-    Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Uygulama kilidi kapatıldı.', style: TextStyle())));
+
+    if (!kIsWeb) {
+      widget.onChanged();
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Uygulama kilidi kapatıldı.', style: TextStyle()),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.onChanged();
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Uygulama kilidi kapatıldı.', style: TextStyle()),
+          ),
+        );
+      }
+    } catch (_) {
+      widget.account.pinHash = previousHash;
+      widget.account.lockTimeout = previousTimeout;
+      if (mounted) {
+        setState(
+          () => _error =
+              'PIN ayarı güvenli biçimde kaydedilemedi. Yeniden deneyin.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -76,10 +147,13 @@ class _PinSetupDialogState extends State<PinSetupDialog> {
     return AlertDialog(
       title: Row(
         children: [
-          const Icon(Icons.shield_outlined, color: AppColors.primaryDark, size: 22),
+          const Icon(
+            Icons.shield_outlined,
+            color: AppColors.primaryDark,
+            size: 22,
+          ),
           const SizedBox(width: 10),
-          const Text('Uygulama Kilidi (PIN)',
-              style: TextStyle(fontSize: 17)),
+          const Text('Uygulama Kilidi (PIN)', style: TextStyle(fontSize: 17)),
         ],
       ),
       content: SizedBox(
@@ -88,7 +162,7 @@ class _PinSetupDialogState extends State<PinSetupDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: _saving ? null : () => Navigator.of(context).pop(),
           child: const Text('Vazgeç', style: TextStyle()),
         ),
       ],
@@ -104,25 +178,31 @@ class _PinSetupDialogState extends State<PinSetupDialog> {
           children: [
             const Icon(Icons.check_circle, size: 18, color: AppColors.success),
             const SizedBox(width: 8),
-            Text('PIN aktif — ${widget.account.lockTimeout} dk otomatik kilit',
-                style: const TextStyle(
-                    fontSize: 14, color: AppColors.text2)),
+            Expanded(
+              child: Text(
+                'PIN aktif — ${widget.account.lockTimeout} dk otomatik kilit',
+                style: const TextStyle(fontSize: 14, color: AppColors.text2),
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 18),
-        Row(
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
           children: [
             FilledButton.icon(
-              onPressed: () {
-                Navigator.of(context).pop();
-                widget.onLockRequest?.call();
-              },
+              onPressed: _saving
+                  ? null
+                  : () {
+                      Navigator.of(context).pop();
+                      widget.onLockRequest?.call();
+                    },
               icon: const Icon(Icons.lock, size: 17),
               label: const Text('Şimdi Kilitle', style: TextStyle()),
             ),
-            const SizedBox(width: 12),
             TextButton(
-              onPressed: _disable,
+              onPressed: _saving ? null : _disable,
               child: const Text('PIN\'i Kaldır', style: TextStyle()),
             ),
           ],
@@ -143,36 +223,57 @@ class _PinSetupDialogState extends State<PinSetupDialog> {
         const SizedBox(height: 14),
         TextField(
           controller: _pin,
+          enabled: !_saving,
           obscureText: true,
           keyboardType: TextInputType.number,
           inputFormatters: [
             FilteringTextInputFormatter.digitsOnly,
             LengthLimitingTextInputFormatter(6),
           ],
-          style: const TextStyle( letterSpacing: 6),
-          decoration: InputDecoration(labelText: 'PIN (4-6 hane)', hintText: '••••'),
+          style: const TextStyle(letterSpacing: 6),
+          decoration: const InputDecoration(
+            labelText: 'PIN (4-6 hane)',
+            hintText: '••••',
+          ),
         ),
         const SizedBox(height: 12),
         DropdownButtonFormField<int>(
           initialValue: _timeout,
           decoration: const InputDecoration(labelText: 'Otomatik kilit süresi'),
           items: const [
-            DropdownMenuItem(value: 1, child: Text('1 dakika', style: TextStyle())),
-            DropdownMenuItem(value: 5, child: Text('5 dakika', style: TextStyle())),
-            DropdownMenuItem(value: 15, child: Text('15 dakika', style: TextStyle())),
-            DropdownMenuItem(value: 30, child: Text('30 dakika', style: TextStyle())),
+            DropdownMenuItem(
+              value: 1,
+              child: Text('1 dakika', style: TextStyle()),
+            ),
+            DropdownMenuItem(
+              value: 5,
+              child: Text('5 dakika', style: TextStyle()),
+            ),
+            DropdownMenuItem(
+              value: 15,
+              child: Text('15 dakika', style: TextStyle()),
+            ),
+            DropdownMenuItem(
+              value: 30,
+              child: Text('30 dakika', style: TextStyle()),
+            ),
           ],
-          onChanged: (v) => setState(() => _timeout = v ?? 5),
+          onChanged: _saving ? null : (v) => setState(() => _timeout = v ?? 5),
         ),
         if (_error != null) ...[
           const SizedBox(height: 8),
-          Text(_error!,
-              style: const TextStyle(fontSize: 13, color: AppColors.danger)),
+          Text(
+            _error!,
+            style: const TextStyle(fontSize: 13, color: AppColors.danger),
+          ),
         ],
         const SizedBox(height: 16),
         FilledButton(
-          onPressed: _save,
-          child: const Text('PIN Kilidini Kaydet', style: TextStyle()),
+          onPressed: _saving ? null : _save,
+          child: Text(
+            _saving ? 'Güvenli kaydediliyor…' : 'PIN Kilidini Kaydet',
+            style: const TextStyle(),
+          ),
         ),
       ],
     );

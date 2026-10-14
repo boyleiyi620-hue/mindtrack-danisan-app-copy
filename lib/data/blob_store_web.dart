@@ -1,140 +1,163 @@
-// Web için büyük veri deposu: IndexedDB.
-//
-// Neden? Psikologun klinik kaydı (seans notları, form yanıtları, danışanlar)
-// 8 danışan/gün temposunda yılda ~8 MB büyüyor ve belge/PDF'lerle birlikte çok
-// daha fazla. `localStorage` ~5 MB ile sınırlı olduğu için veri orada tutulamaz.
-// IndexedDB ise gigabayt ölçeğindedir.
-//
-// Üç güvenlik ağı:
-//  1. IndexedDB açılamazsa (gizli sekme, eski tarayıcı) yazma/okuma
-//     SharedPreferences'a düşer — hiçbir ortamda veri kaybı olmaz.
-//  2. `localStorage`'da kalan eski kayıtlar ilk okumada şeffaf biçimde
-//     IndexedDB'ye taşınır; kullanıcı yükseltme sonrası verisini kaybetmez.
-//  3. Yalnızca oturumdaki hesabın kaydı açılışta belleğe alınır; büyük
-//     IndexedDB depoları giriş ekranını bekletmez.
-import 'dart:async';
+// Web için şifreli IndexedDB kasası.
+// Düz metin localStorage fallback'i bilerek kaldırılmıştır: güvenli IndexedDB
+// ve Web Crypto kullanılamıyorsa başlangıç/yazma güvenli hata verir.
+import 'dart:js_interop';
 
-import 'package:indexed_db/indexed_db.dart' as idb;
 import 'package:shared_preferences/shared_preferences.dart';
+
+@JS('mindTrackSecureStorage.initialize')
+external JSPromise<JSBoolean> _vaultInitialize();
+
+@JS('mindTrackSecureStorage.get')
+external JSPromise<JSString> _vaultGet(JSString key);
+
+@JS('mindTrackSecureStorage.set')
+external JSPromise<JSBoolean> _vaultSet(JSString key, JSString value);
+
+@JS('mindTrackSecureStorage.remove')
+external JSPromise<JSBoolean> _vaultRemove(JSString key);
+
+@JS('mindTrackSecureStorage.removeUserData')
+external JSPromise<JSBoolean> _vaultRemoveUserData(JSString userId);
+
+@JS('mindTrackSecureStorage.hashPin')
+external JSPromise<JSString> _vaultHashPin(JSString pin);
+
+@JS('mindTrackSecureStorage.verifyPin')
+external JSPromise<JSBoolean> _vaultVerifyPin(
+  JSString pin,
+  JSString storedHash,
+  JSString legacySalt,
+);
 
 class BlobStore {
   BlobStore._();
 
   static final BlobStore instance = BlobStore._();
 
-  static const String _dbName = 'mindtrack_blobs';
-  static const String _storeName = 'kv';
+  static const String _dataKeyPrefix = 'mt_data_';
 
-  /// Bellek önbelleği: `get()` senkron olabilsin diye.
+  /// Senkron DataStore okumaları için yalnızca bellekte tutulan açık metin.
   final Map<String, String> _cache = <String, String>{};
 
-  /// `localStorage`'daki eski kopyalar; yalnızca geçiş ve yedek için okunur.
   SharedPreferences? _legacy;
-
-  idb.Database? _db;
   bool _ready = false;
+  Future<void>? _initializing;
 
   Future<void> init() async {
     if (_ready) return;
+    final inFlight = _initializing;
+    if (inFlight != null) {
+      await inFlight;
+      return;
+    }
+    final attempt = _initialize();
+    _initializing = attempt;
+    try {
+      await attempt;
+    } catch (_) {
+      if (identical(_initializing, attempt)) _initializing = null;
+      rethrow;
+    }
+  }
+
+  Future<void> _initialize() async {
+    _legacy = await SharedPreferences.getInstance();
+    // Secure storage initializes IndexedDB v2, encrypts existing v1 values,
+    // and fails closed if browser crypto/storage is unavailable.
+    await _vaultInitialize().toDart;
+    await _migrateLegacyLocalStorage();
     _ready = true;
-    try {
-      _legacy = await SharedPreferences.getInstance();
-    } catch (_) {
-      _legacy = null;
-    }
-    try {
-      if (!idb.IdbFactory.supported) return;
-      // `openCreate` in indexed_db 1.0.1 assumes `upgradeneeded` runs on
-      // every open. IndexedDB only fires it when a database is first created
-      // or upgraded, so reopening an existing database leaves its late locals
-      // uninitialized and can stop the entire Flutter web app from starting.
-      // Open the known v1 schema directly and create the store only during an
-      // actual upgrade; this preserves existing clinical data on later opens.
-      _db = await idb.IdbFactory().open(
-        _dbName,
-        version: 1,
-        onUpgradeNeeded: (event) {
-          final database = event.target.database;
-          if (!(database.objectStoreNames?.contains(_storeName) ?? false)) {
-            database.createObjectStore(
-              _storeName,
-              keyPath: null,
-              autoIncrement: false,
-            );
-          }
-        },
-      );
-    } catch (_) {
-      _db = null;
+  }
+
+  /// Move legacy SharedPreferences/localStorage snapshots only after their
+  /// encrypted IndexedDB copy has been written and read back successfully.
+  Future<void> _migrateLegacyLocalStorage() async {
+    final legacy = _legacy;
+    if (legacy == null) return;
+    final keys = legacy
+        .getKeys()
+        .where((key) => key.startsWith(_dataKeyPrefix) || key == 'mt_users_v1')
+        .toList(growable: false);
+    for (final key in keys) {
+      final plaintext = legacy.getString(key);
+      if (plaintext == null) continue;
+      await _vaultSet(key.toJS, plaintext.toJS).toDart;
+      final verified = (await _vaultGet(key.toJS).toDart).toDart;
+      if (verified != plaintext) {
+        throw StateError('Eski yerel kayıt güvenli kasaya doğrulanamadı.');
+      }
+      final removed = await legacy.remove(key);
+      if (!removed) {
+        throw StateError('Eski düz metin yerel kopyası silinemedi.');
+      }
     }
   }
 
-  /// DataStore okumadan önce yalnızca açık hesabın kaydını yükler.
-  /// Tüm anahtarları taramak, klinik kayıt büyüdükçe açılışı yavaşlatır.
+  /// DataStore, JSON çözümlemeden önce mevcut hesabın şifresiz eski
+  /// IndexedDB/localStorage kaydını güvenli kasaya alır.
   Future<void> preload(String key) async {
+    await init();
     if (_cache.containsKey(key)) return;
-    final db = _db;
-    if (db == null) return;
-    try {
-      final value = await db
-          .transaction(_storeName, 'readonly')
-          .objectStore(_storeName)
-          .getObject(key);
-      if (value is String) _cache[key] = value;
-    } catch (_) {
-      // Keep the existing localStorage fallback available through get().
-    }
+    final value = (await _vaultGet(key.toJS).toDart).toDart;
+    if (value.isNotEmpty) _cache[key] = value;
   }
 
-  /// Senkron okuma: önce bellek, sonra eski `localStorage` kopyası.
-  String? get(String key) {
-    final cached = _cache[key];
-    if (cached != null) return cached;
-    final legacy = _legacy?.getString(key);
-    if (legacy == null) return null;
-    // Eski kayıt bulundu: belleğe al ve IndexedDB'ye taşı.
-    _cache[key] = legacy;
-    unawaited(_persist(key, legacy).catchError((Object _) {}));
-    return legacy;
-  }
+  /// Senkron okuma yalnızca önceden şifresi çözülmüş bellek kopyasını döndürür.
+  String? get(String key) => _cache[key];
 
   Future<void> set(String key, String value) async {
+    await init();
+    await _vaultSet(key.toJS, value.toJS).toDart;
     _cache[key] = value;
-    await _persist(key, value);
   }
 
   Future<void> remove(String key) async {
+    await init();
+    await _vaultRemove(key.toJS).toDart;
     _cache.remove(key);
-    final db = _db;
-    if (db != null) {
-      try {
-        await db
-            .transaction(_storeName, 'readwrite')
-            .objectStore(_storeName)
-            .delete(key);
-      } catch (_) {
-        // Yazılamadıysa eski kopyadan da silinmeli.
-      }
-    }
     await _legacy?.remove(key);
   }
 
-  /// IndexedDB'ye yazar; açılamıyorsa `localStorage`'a düşer.
-  Future<void> _persist(String key, String value) async {
-    final db = _db;
-    if (db != null) {
-      try {
-        await db
-            .transaction(_storeName, 'readwrite')
-            .objectStore(_storeName)
-            .put(value, key);
-        return;
-      } catch (_) {
-        _db = null;
+  /// Çıkıştan önce, eşleşen hesabın snapshot ve recovery kopyalarını ve AES
+  /// anahtarını tek IndexedDB işlemiyle kaldırır.
+  Future<void> removeUserData(String userId) async {
+    await init();
+    await _vaultRemoveUserData(userId.toJS).toDart;
+    final prefix = '$_dataKeyPrefix$userId';
+    _cache.removeWhere(
+      (key, _) => key == prefix || key.startsWith('${prefix}_'),
+    );
+    final legacy = _legacy;
+    if (legacy != null) {
+      final keys = legacy
+          .getKeys()
+          .where((key) => key == prefix || key.startsWith('${prefix}_'))
+          .toList(growable: false);
+      for (final key in keys) {
+        if (!await legacy.remove(key)) {
+          throw StateError('Eski yerel veri kopyası silinemedi.');
+        }
       }
     }
-    final legacy = _legacy ??= await SharedPreferences.getInstance();
-    final saved = await legacy.setString(key, value);
-    if (!saved) throw StateError('Tarayıcı yerel depolaması yazmayı reddetti.');
+  }
+
+  Future<String> hashWebPin(String pin) async {
+    await init();
+    return (await _vaultHashPin(pin.toJS).toDart).toDart;
+  }
+
+  Future<bool> verifyWebPin(
+    String pin,
+    String? storedHash,
+    String legacySalt,
+  ) async {
+    if (storedHash == null || storedHash.isEmpty) return false;
+    await init();
+    return (await _vaultVerifyPin(
+      pin.toJS,
+      storedHash.toJS,
+      legacySalt.toJS,
+    ).toDart).toDart;
   }
 }

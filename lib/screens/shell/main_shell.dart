@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/account_store.dart';
@@ -110,6 +111,7 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   int _index = 0;
   bool _locked = false;
+  bool _logoutBusy = false;
   late List<Widget Function()> _tabBuilders;
 
   AppMode? get _selectedMode {
@@ -141,7 +143,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _locked = widget.store.isLocked;
     _watchTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-      if (!_locked && _u.lockTimeout > 0) {
+      if (!_locked && !_logoutBusy && _u.lockTimeout > 0) {
         final el = DateTime.now().difference(_lastActivity);
         if (el.inMinutes >= _u.lockTimeout) _lock();
       }
@@ -175,7 +177,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   void _tick() => _lastActivity = DateTime.now();
 
   void _lock() {
-    if (!_u.hasPin || _locked) return;
+    if (!_u.hasPin || _locked || _logoutBusy) return;
     setState(() {
       _locked = true;
       _lastActivity = DateTime.now();
@@ -190,6 +192,21 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   }
 
   Future<void> _logout() async {
+    if (kIsWeb && _logoutBusy) return;
+    if (kIsWeb) setState(() => _logoutBusy = true);
+    try {
+      if (kIsWeb) await widget.data.prepareForLogout();
+    } catch (_) {
+      if (mounted) {
+        if (kIsWeb) setState(() => _logoutBusy = false);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+            'Senkronizasyon tamamlanamadı; kayıtlar korundu ve çıkış yapılmadı. Bağlantıyı kontrol edip yeniden deneyin.',
+          ),
+        ));
+      }
+      return;
+    }
     try {
       await MindTrackBackend.instance.signOut();
     } catch (_) {
@@ -211,8 +228,9 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
       PinSetupDialog.show(
         context,
         account: _u,
-        onChanged: () {
+        onChanged: () async {
           widget.store.updateUser(_u);
+          if (kIsWeb) await widget.store.flushUserWrites();
           setState(() {});
         },
         onLockRequest: _lock,
@@ -223,13 +241,17 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     if (_locked) {
-      return PinScreen(store: widget.store, onUnlock: _unlock);
+      return PinScreen(
+        store: widget.store,
+        data: widget.data,
+        onUnlock: _unlock,
+      );
     }
     if (_u.appMode == '' || _u.appMode == 'none') {
       return ModeSelectionScreen(onSelected: _setMode);
     }
     final wide = MediaQuery.sizeOf(context).width >= 900;
-    return Scaffold(
+    final scaffold = Scaffold(
       appBar: _buildTopBar(context, wide),
       body: Row(
         children: [
@@ -244,6 +266,39 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
         ],
       ),
       bottomNavigationBar: wide ? null : _bottomNav(context),
+    );
+    if (!kIsWeb) return scaffold;
+    return Stack(
+      children: [
+        scaffold,
+        if (_logoutBusy)
+          Positioned.fill(
+            child: AbsorbPointer(
+              child: ColoredBox(
+                color: Color(0x44000000),
+                child: Center(
+                  child: Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(20),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2.5),
+                          ),
+                          SizedBox(width: 12),
+                          Text('Kayıtlar güvenle eşitleniyor…'),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 

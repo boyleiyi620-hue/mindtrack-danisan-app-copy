@@ -58,6 +58,7 @@ class DataStore extends ChangeNotifier {
   String? _syncMessage;
   Timer? _retryTimer;
   bool _disposed = false;
+  bool _logoutPreparing = false;
   String? _lastReportedError;
   DateTime? _lastReportedErrorAt;
 
@@ -108,6 +109,7 @@ class DataStore extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    _logoutPreparing = false;
     final backend = MindTrackBackend.instance;
     // Yerel klinik önbelleği yalnızca onu oluşturan Supabase hesabıyla
     // birlikte açılabilir. Kimlik doğrulanmamış/eski oturumda gösterme.
@@ -127,8 +129,12 @@ class DataStore extends ChangeNotifier {
       if (raw != null && raw.isNotEmpty) {
         data = AppData.fromJson(jsonDecode(raw) as Map<String, dynamic>);
         if (deduplicateClientsByEmail()) {
-          unawaited(BlobStore.instance.set(
-              accounts.dataKey(u), jsonEncode(data.toJson())));
+          unawaited(
+            BlobStore.instance.set(
+              accounts.dataKey(u),
+              jsonEncode(data.toJson()),
+            ),
+          );
         }
       } else {
         data = AppData.empty();
@@ -140,9 +146,7 @@ class DataStore extends ChangeNotifier {
       if (raw != null && raw.isNotEmpty) {
         final recoveryKey =
             '${localKey}_recovery_${DateTime.now().microsecondsSinceEpoch}';
-        unawaited(
-          BlobStore.instance.set(recoveryKey, raw).catchError((_) {}),
-        );
+        unawaited(BlobStore.instance.set(recoveryKey, raw).catchError((_) {}));
       }
       data = AppData.empty();
     }
@@ -251,7 +255,7 @@ class DataStore extends ChangeNotifier {
     RemoteStateSnapshot? snapshot,
     UserAccount localUser,
   ) async {
-    if (snapshot == null) return;
+    if (snapshot == null || _logoutPreparing) return;
     try {
       // Bu cihazda sunucuya gitmemiş değişiklik varsa gelen durum
       // koşulsuz üzerine yazılırsa notlar kaybolur. Önce yerel
@@ -278,6 +282,10 @@ class DataStore extends ChangeNotifier {
       // korunur, olmayanlar ilk açıldığında indirilir.
       carryLocalBinaries(next, data);
       await _hydratePdfs(next);
+      if (kIsWeb &&
+          (_logoutPreparing || accounts.current?.id != localUser.id)) {
+        return;
+      }
       final encoded = jsonEncode(next.toJson());
       data = next;
       await BlobStore.instance.set(accounts.dataKey(localUser), encoded);
@@ -288,10 +296,8 @@ class DataStore extends ChangeNotifier {
     }
   }
 
-  Future<void> _applyRemoteRecords(
-    List<Map<String, dynamic>> rows,
-  ) async {
-    if (!_recordSyncActive) return;
+  Future<void> _applyRemoteRecords(List<Map<String, dynamic>> rows) async {
+    if (!_recordSyncActive || _logoutPreparing) return;
     try {
       _recordVersions = recordVersionsFromRows(rows);
       final next = appDataFromRecords(rows);
@@ -304,6 +310,7 @@ class DataStore extends ChangeNotifier {
       }
       carryLocalBinaries(next, data);
       await _hydratePdfs(next);
+      if (_logoutPreparing) return;
       _remoteRecordData = next;
       data = next;
       final user = accounts.current;
@@ -367,7 +374,7 @@ class DataStore extends ChangeNotifier {
 
   void save() {
     final u = accounts.current;
-    if (u == null) return;
+    if (u == null || _logoutPreparing) return;
     if (isAssistantReadOnly) return;
     deduplicateClientsByEmail();
     final encoded = jsonEncode(data.toJson());
@@ -515,21 +522,18 @@ class DataStore extends ChangeNotifier {
     final previous = _recordSyncActive ? _remoteRecordData : AppData.empty();
     final changes = diffAppData(previous, next);
     final records = changes.all
-        .map((record) => record.copyWith(
-              expectedVersion: _recordVersions[
-                    '${record.recordType}:${record.recordId}'
-                  ] ??
-                  0,
-            ))
+        .map(
+          (record) => record.copyWith(
+            expectedVersion:
+                _recordVersions['${record.recordType}:${record.recordId}'] ?? 0,
+          ),
+        )
         .toList();
     if (records.isNotEmpty) {
       final saved = await MindTrackBackend.instance.savePsychologistRecords(
         records,
       );
-      _recordVersions = {
-        ..._recordVersions,
-        ...recordVersionsFromRows(saved),
-      };
+      _recordVersions = {..._recordVersions, ...recordVersionsFromRows(saved)};
     }
     _recordSyncActive = true;
     _remoteRecordData = next;
@@ -592,14 +596,16 @@ class DataStore extends ChangeNotifier {
     }
     _lastReportedError = fingerprint;
     _lastReportedErrorAt = now;
-    unawaited(MindTrackBackend.instance.reportClientError(
-      category: 'sync_failure',
-      // Remote telemetry must never receive backend/provider error text. The
-      // full detail remains local for the clinician's recovery UI only.
-      message: 'sync_failure',
-      severity: _failures >= 3 ? 'critical' : 'error',
-      appVersion: _appVersion,
-    ));
+    unawaited(
+      MindTrackBackend.instance.reportClientError(
+        category: 'sync_failure',
+        // Remote telemetry must never receive backend/provider error text. The
+        // full detail remains local for the clinician's recovery UI only.
+        message: 'sync_failure',
+        severity: _failures >= 3 ? 'critical' : 'error',
+        appVersion: _appVersion,
+      ),
+    );
   }
 
   void _scheduleRetry() {
@@ -693,12 +699,12 @@ class DataStore extends ChangeNotifier {
 
   /// Senkronizasyonun anlık durumu — arayüz bunu dinleyip kullanıcıya gösterir.
   SyncStatus get syncStatus => SyncStatus(
-        phase: _phase,
-        failures: _failures,
-        lastSyncedAt: _lastSyncedAt,
-        lastErrorAt: _lastErrorAt,
-        message: _syncMessage,
-      );
+    phase: _phase,
+    failures: _failures,
+    lastSyncedAt: _lastSyncedAt,
+    lastErrorAt: _lastErrorAt,
+    message: _syncMessage,
+  );
 
   /// Kullanıcı "Şimdi dene" dediğinde elle tetikler.
   Future<void> retrySyncNow() async {
@@ -716,6 +722,82 @@ class DataStore extends ChangeNotifier {
     }
     _failures = 0;
     await _saveRemote(jsonEncode(data.toJson()));
+  }
+
+  /// Web çıkışında istemci kasasını yalnızca kayıtların sunucuya ulaştığı
+  /// doğrulandıktan sonra siler. Mobil çıkış yolu bu metoda dokunmaz.
+  Future<void> prepareForLogout() async {
+    if (!kIsWeb) return;
+    final user = accounts.current;
+    if (user == null) return;
+    if (_logoutPreparing) throw StateError('Çıkış işlemi zaten sürüyor.');
+    _logoutPreparing = true;
+
+    try {
+      await accounts.flushUserWrites();
+      final loadDeadline = DateTime.now().add(const Duration(seconds: 15));
+      while (_remoteLoading && DateTime.now().isBefore(loadDeadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      if (_remoteLoading) {
+        throw StateError('Uzak kayıt yüklemesi tamamlanmadı.');
+      }
+      await _remoteSubscription?.cancel();
+      _remoteSubscription = null;
+      await _recordSubscription?.cancel();
+      _recordSubscription = null;
+
+      await flushLocalWrites();
+      _remoteSaveTimer?.cancel();
+      _remoteSaveTimer = null;
+
+      if (!isAssistantReadOnly) {
+        if (_hasConflict) {
+          throw StateError(
+            'Senkron çakışması çözülmeden çıkış verisi silinemez.',
+          );
+        }
+        if (!MindTrackBackend.instance.isSignedIn) {
+          throw StateError('Sunucu oturumu doğrulanamadı.');
+        }
+        final revision = _saveRevision;
+        await _saveRemote(
+          jsonEncode(data.toJson()),
+          revision: revision,
+          user: user,
+        );
+        final syncDeadline = DateTime.now().add(const Duration(seconds: 30));
+        bool isSynced() =>
+            !_remoteSaving &&
+            _pendingRemoteEncoded == null &&
+            !hasUnsyncedChanges &&
+            _phase == SyncPhase.idle &&
+            _saveRevision == revision &&
+            _persistedRevision >= revision;
+        while (!isSynced() &&
+            !_hasConflict &&
+            DateTime.now().isBefore(syncDeadline)) {
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        }
+        if (!isSynced()) {
+          throw StateError('Son klinik snapshot sunucuya kaydedilemedi.');
+        }
+      }
+
+      _remoteSaveTimer?.cancel();
+      _remoteSaveTimer = null;
+      _retryTimer?.cancel();
+      _retryTimer = null;
+      await BlobStore.instance.removeUserData(user.id);
+      await _prefs.remove(_dirtyKey(user));
+      await _prefs.remove(_syncedAtKey(user));
+      data = AppData.empty();
+      _setPhase(SyncPhase.idle);
+      notifyListeners();
+    } catch (_) {
+      _logoutPreparing = false;
+      rethrow;
+    }
   }
 
   void _setPhase(SyncPhase phase, {String? message}) {
@@ -774,9 +856,10 @@ class DataStore extends ChangeNotifier {
   /// Mevcut kaydı diske yazar (kirli işareti bu yol değiştirir).
   void _persistLocal() {
     final user = accounts.current;
-    if (user == null) return;
-    unawaited(BlobStore.instance.set(
-        accounts.dataKey(user), jsonEncode(data.toJson())));
+    if (user == null || _logoutPreparing) return;
+    unawaited(
+      BlobStore.instance.set(accounts.dataKey(user), jsonEncode(data.toJson())),
+    );
   }
 
   // ---------------- tembel belge indirme ----------------
@@ -792,7 +875,12 @@ class DataStore extends ChangeNotifier {
   ) {
     final running = _inflightDownloads[storagePath];
     if (running != null) return running;
-    final future = _performDownload(storagePath, type, cache);
+    final future = _performDownload(
+      storagePath,
+      type,
+      cache,
+      requestUserId: accounts.current?.id,
+    );
     _inflightDownloads[storagePath] = future;
     return future;
   }
@@ -800,10 +888,15 @@ class DataStore extends ChangeNotifier {
   Future<Uint8List> _performDownload(
     String storagePath,
     String type,
-    void Function(String dataUrl) cache,
-  ) async {
+    void Function(String dataUrl) cache, {
+    required String? requestUserId,
+  }) async {
     try {
       final bytes = await MindTrackBackend.instance.downloadPdf(storagePath);
+      if (kIsWeb &&
+          (_logoutPreparing || accounts.current?.id != requestUserId)) {
+        return Uint8List(0);
+      }
       cache('data:$type;base64,${base64Encode(bytes)}');
       _persistLocal();
       notifyListeners();

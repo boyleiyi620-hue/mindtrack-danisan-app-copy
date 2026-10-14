@@ -1,8 +1,8 @@
 /// Büyük yerel veri parçalarının deposu.
 ///
 /// Psikologun klinik kaydı yılda onlarca megabayta ulaşabilir. Tarayıcının
-/// `localStorage` alanı ~5 MB ile sınırlı olduğu için bu kayıt web'de
-/// IndexedDB'de tutulur; diğer platformlarda SharedPreferences aynı işi görür.
+/// Web'de kayıtlar AES-GCM ile şifrelenmiş IndexedDB'de tutulur; diğer
+/// platformlarda SharedPreferences kullanılır. Web'de düz metin fallback'i yoktur.
 ///
 /// Okuma senkron çalışır (depo belleğe yüklendiği için), yazma arka planda
 /// tamamlanır. Böylece ekranların mevcut senkron okuma alışkanlığı bozulmaz.

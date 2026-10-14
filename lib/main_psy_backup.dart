@@ -183,7 +183,7 @@ class MindTrackApp extends StatelessWidget {
     final Widget home;
     if (store.current != null && backendSignedIn) {
       home = store.isLocked
-          ? PinScreen(store: store, onUnlock: () {})
+          ? PinScreen(store: store, data: data, onUnlock: () {})
           : _DeferredMainShell(store: store, data: data);
     } else {
       home = AuthScreen(store: store, data: data);

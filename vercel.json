@@ -19,7 +19,7 @@
       ]
     },
     {
-      "source": "/(main\\.dart\\.js|flutter_bootstrap\\.js|flutter\\.js|flutter_service_worker\\.js|pwa_update\\.js)",
+      "source": "/(main\\.dart\\.js|flutter_bootstrap\\.js|flutter\\.js|flutter_service_worker\\.js|pwa_update\\.js|secure_local_storage\\.js|client/(pwa_update|secure_local_storage)\\.js)",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
       ]

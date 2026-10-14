@@ -101,7 +101,12 @@ class _AuthScreenState extends State<AuthScreen> {
       return;
     }
     widget.store.setSession(user);
+    if (kIsWeb) {
+      await widget.store.flushUserWrites();
+      await widget.store.preloadUserData(user);
+    }
     await _attachOrganization(user);
+    if (kIsWeb) await widget.store.flushUserWrites();
     widget.data.load();
     await widget.data.startRemoteSync();
     if (mounted) _goHome();
@@ -187,7 +192,12 @@ class _AuthScreenState extends State<AuthScreen> {
       widget.store.updateUser(u);
     }
     widget.store.setSession(u);
+    if (kIsWeb) {
+      await widget.store.flushUserWrites();
+      await widget.store.preloadUserData(u);
+    }
     await _attachOrganization(u);
+    if (kIsWeb) await widget.store.flushUserWrites();
     widget.data.load();
     await widget.data.startRemoteSync();
     if (mounted) _goHome();
@@ -318,7 +328,12 @@ class _AuthScreenState extends State<AuthScreen> {
     }
     widget.store.addUser(u);
     widget.store.setSession(u);
+    if (kIsWeb) {
+      await widget.store.flushUserWrites();
+      await widget.store.preloadUserData(u);
+    }
     await _attachOrganization(u);
+    if (kIsWeb) await widget.store.flushUserWrites();
     widget.data.load();
     await widget.data.startRemoteSync();
     if (mounted) _goHome();
