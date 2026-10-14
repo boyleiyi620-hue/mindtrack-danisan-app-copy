@@ -31,7 +31,13 @@
       ]
     },
     {
-      "source": "/(client/)?(pwa_update|secure_local_storage)\\.js",
+      "source": "/(pwa_update|secure_local_storage)\\.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/client/(pwa_update|secure_local_storage)\\.js",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
       ]
