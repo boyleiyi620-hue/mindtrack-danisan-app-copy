@@ -84,7 +84,12 @@ List<RecordEnvelope> recordsFromAppData(
     for (final item in items) {
       if (item is! Map) continue;
       final data = Map<String, dynamic>.from(item);
-      final id = data['id']?.toString().trim();
+      // FinanceGoal predates record sync and has no id field; its unique
+      // YYYY-MM month is its stable identity for upserts and tombstones.
+      final id = (data['id'] ??
+              (entry.value == 'finance_goal' ? data['month'] : null))
+          ?.toString()
+          .trim();
       if (id == null || id.isEmpty) continue;
       records.add(RecordEnvelope(
         recordType: entry.value,
@@ -150,7 +155,10 @@ AppData removeRecordsByKey(AppData value, Set<String> keys) {
     if (records is! List) continue;
     json[entry.key] = records.where((item) {
       if (item is! Map) return true;
-      final id = item['id']?.toString().trim();
+      final id = (item['id'] ??
+              (entry.value == 'finance_goal' ? item['month'] : null))
+          ?.toString()
+          .trim();
       return id == null || !keys.contains(recordKeyHash('${entry.value}:$id'));
     }).toList();
   }
