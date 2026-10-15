@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:flutter/widgets.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/client.dart';
@@ -20,6 +21,7 @@ class MindTrackBackend {
   static final MindTrackBackend instance = MindTrackBackend._();
 
   static const String pdfBucket = 'mindtrack-pdfs';
+  static const int _syncPageSize = 500;
 
   SupabaseClient get _db => Supabase.instance.client;
 
@@ -57,6 +59,15 @@ class MindTrackBackend {
     if (!isReady) return const Stream<AuthState>.empty();
     return _db.auth.onAuthStateChange;
   }
+  Future<T> _guardForUser<T>(
+    String expectedUserId,
+    Future<T> Function() action,
+  ) => _guard(() async {
+    if (userId != expectedUserId) {
+      throw BackendException('Oturum değişti; işlem gönderilmedi.');
+    }
+    return action();
+  });
 
   // ---------------------------------------------------------------- oturum ---
 
@@ -269,18 +280,22 @@ class MindTrackBackend {
   Future<int> saveState(
     Map<String, dynamic> data, {
     required int expectedVersion,
+    required String expectedUserId,
   }) async {
     final uid = userId;
-    if (uid == null) return expectedVersion;
-    return _guard(() async {
+    if (uid == null || uid != expectedUserId) {
+      throw BackendException('Oturum değişti; kayıt sunucuya gönderilmedi.');
+    }
+    return _guardForUser(uid, () async {
       final current = await _db
           .from('psychologist_state')
           .select()
           .eq('psychologist_id', uid)
           .maybeSingle();
-      // Keep deployments safe while the migration is being applied. Existing
-      // projects may briefly still have the legacy schema; they continue with
-      // the old write path until `state_version` becomes available.
+      if (userId != uid) {
+        throw BackendException('Oturum değişti; kayıt sunucuya gönderilmedi.');
+      }
+      // Preserve the legacy write path while a deployment is still on the old schema.
       if (current != null && !current.containsKey('state_version')) {
         await _db.from('psychologist_state').upsert({
           'psychologist_id': uid,
@@ -329,43 +344,148 @@ class MindTrackBackend {
   /// Kayıt bazlı geçiş katmanı. Eski psychologist_state akışıyla paralel
   /// kullanılabilir; istemci her kaydı kendi beklenen sürümüyle yazar.
   Future<List<Map<String, dynamic>>> savePsychologistRecords(
-    Iterable<RecordEnvelope> records,
-  ) async {
+    Iterable<RecordEnvelope> records, {
+    required String expectedUserId,
+  }) async {
     final uid = userId;
-    if (uid == null) return const [];
+    if (uid == null || uid != expectedUserId) {
+      throw BackendException('Oturum değişti; kayıt sunucuya gönderilmedi.');
+    }
     final payload = records.map((record) => record.toJson()).toList();
     if (payload.isEmpty) return const [];
     late final dynamic result;
     try {
-      result = await _guard(
-        () => _db.rpc('upsert_psychologist_records', params: {
-          'p_records': payload,
-        }),
-      );
+      result = await _guard(() {
+        if (userId != uid) {
+          throw BackendException(
+            'Oturum değişti; kayıt sunucuya gönderilmedi.',
+          );
+        }
+        return _db.rpc(
+          'upsert_psychologist_records',
+          params: {'p_records': payload},
+        );
+      });
     } on BackendException catch (error) {
       if (error.message.toLowerCase().contains('record_conflict')) {
         throw StateConflictException();
       }
       rethrow;
     }
-    if (result is! List) return const [];
+    if (userId != uid) {
+      throw BackendException('Oturum değişti; kayıt onayı kabul edilmedi.');
+    }
+    if (result is! List) {
+      throw BackendException('Sunucu kayıt onayı döndürmedi.');
+    }
     return result
         .whereType<Map>()
         .map((row) => Map<String, dynamic>.from(row))
         .toList();
   }
 
-  Future<List<Map<String, dynamic>>> fetchPsychologistRecords() async {
+  Future<List<Map<String, dynamic>>> fetchPsychologistRecords({
+    required String expectedUserId,
+  }) async {
     final uid = userId;
-    if (uid == null) return const [];
-    final rows = await _guard(() => _db
-        .from('psychologist_records')
-        .select('record_type, record_id, data, record_version, deleted_at')
-        .eq('psychologist_id', uid));
-    return (rows as List)
-        .whereType<Map>()
-        .map((row) => Map<String, dynamic>.from(row))
-        .toList();
+    if (uid == null || uid != expectedUserId) {
+      throw BackendException('Oturum değişti; uzak kayıt okunmadı.');
+    }
+    return fetchAllPages<Map<String, dynamic>>((offset, limit) async {
+      final rows = await _guardForUser(
+        uid,
+        () => _db
+            .from('psychologist_records')
+            .select(
+              'record_type, record_id, data, record_version, deleted_at, updated_at',
+            )
+            .eq('psychologist_id', uid)
+            .order('record_type')
+            .order('record_id')
+            .range(offset, offset + limit - 1),
+      );
+      return (rows as List)
+          .whereType<Map>()
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList();
+    }, pageSize: _syncPageSize);
+  }
+  Future<Map<String, dynamic>?> fetchPsychologistRecord({
+    required String expectedUserId,
+    required String recordType,
+    required String recordId,
+  }) async {
+    final uid = userId;
+    if (uid == null || uid != expectedUserId) {
+      throw BackendException('Oturum değişti; uzak kayıt okunmadı.');
+    }
+    final row = await _guardForUser(
+      uid,
+      () => _db
+          .from('psychologist_records')
+          .select(
+            'record_type, record_id, data, record_version, deleted_at, updated_at',
+          )
+          .eq('psychologist_id', uid)
+          .eq('record_type', recordType)
+          .eq('record_id', recordId)
+          .maybeSingle(),
+    );
+    return row == null ? null : Map<String, dynamic>.from(row);
+  }
+  Future<SyncSignalBatch> fetchPsychologistRecordChangesSince({
+    required String expectedUserId,
+    DateTime? updatedSince,
+  }) async {
+    final uid = userId;
+    if (uid == null || uid != expectedUserId) {
+      throw BackendException('Oturum değişti; uzak kayıt okunmadı.');
+    }
+    final latest = await _guardForUser(
+      uid,
+      () => _db
+          .from('psychologist_records')
+          .select('updated_at')
+          .eq('psychologist_id', uid)
+          .order('updated_at', ascending: false)
+          .order('record_type', ascending: false)
+          .order('record_id', ascending: false)
+          .limit(1)
+          .maybeSingle(),
+    );
+    final through = DateTime.tryParse(latest?['updated_at']?.toString() ?? '');
+    if (latest == null || through == null) {
+      return const SyncSignalBatch(rows: [], updatedThrough: null);
+    }
+    final lowerBound = updatedSince?.toUtc().subtract(SyncCursor.overlap);
+    final rows = await fetchAllPages<Map<String, dynamic>>((
+      offset,
+      limit,
+    ) async {
+      var query = _db
+          .from('psychologist_records')
+          .select(
+            'record_type, record_id, data, record_version, deleted_at, updated_at',
+          )
+          .eq('psychologist_id', uid)
+          .lte('updated_at', through.toUtc().toIso8601String());
+      if (lowerBound != null) {
+        query = query.gte('updated_at', lowerBound.toIso8601String());
+      }
+      final page = await _guardForUser(
+        uid,
+        () => query
+            .order('updated_at')
+            .order('record_type')
+            .order('record_id')
+            .range(offset, offset + limit - 1),
+      );
+      return (page as List)
+          .whereType<Map>()
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList();
+    }, pageSize: _syncPageSize);
+    return SyncSignalBatch(rows: rows, updatedThrough: through.toUtc());
   }
 
   /// Asistan için yalnızca danışan dizini ve randevu özetlerini döndürür.
@@ -383,6 +503,170 @@ class MindTrackBackend {
         .whereType<Map>()
         .map((row) => Map<String, dynamic>.from(row))
         .toList();
+  }
+  Stream<Map<String, dynamic>> watchPsychologistRecordSignals({
+    required String expectedUserId,
+  }) => _watchSyncSignals(
+    expectedUserId: expectedUserId,
+    entityType: 'psychologist_record',
+  );
+  Future<SyncSignalBatch> fetchPsychologistRecordSignalsSince({
+    required String expectedUserId,
+    DateTime? updatedSince,
+  }) => _fetchSyncSignals(
+    expectedUserId: expectedUserId,
+    entityType: 'psychologist_record',
+    updatedSince: updatedSince,
+  );
+  Stream<Map<String, dynamic>> _watchSyncSignals({
+    required String expectedUserId,
+    required String entityType,
+  }) {
+    final uid = userId;
+    if (uid == null || uid != expectedUserId) {
+      return const Stream<Map<String, dynamic>>.empty();
+    }
+    final controller = StreamController<Map<String, dynamic>>();
+    final channel = _db.channel('mt:sync-signals:$uid:$entityType');
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'mindtrack_sync_signals',
+      filter: PostgresChangeFilter(
+        type: PostgresChangeFilterType.eq,
+        column: 'user_id',
+        value: uid,
+      ),
+      callback: (payload) {
+        if (userId != uid || controller.isClosed) return;
+        final row = payload.newRecord;
+        if (row['entity_type']?.toString() == entityType) {
+          controller.add(Map<String, dynamic>.from(row));
+        }
+      },
+    );
+    channel.subscribe((status, error) {
+      if (userId != uid || controller.isClosed) return;
+      if (status == RealtimeSubscribeStatus.subscribed || error != null) {
+        controller.add(const {'__reconcile__': true});
+      }
+    });
+    controller.onCancel = () async => _db.removeChannel(channel);
+    return controller.stream;
+  }
+  Future<SyncSignalBatch> _fetchSyncSignals({
+    required String expectedUserId,
+    required String entityType,
+    DateTime? updatedSince,
+  }) async {
+    final uid = userId;
+    if (uid == null || uid != expectedUserId) {
+      throw BackendException('Oturum değişti; değişiklikler okunmadı.');
+    }
+    final latest = await _guardForUser(
+      uid,
+      () => _db
+          .from('mindtrack_sync_signals')
+          .select('updated_at')
+          .eq('user_id', uid)
+          .eq('entity_type', entityType)
+          .order('updated_at', ascending: false)
+          .order('record_type', ascending: false)
+          .order('record_id', ascending: false)
+          .limit(1)
+          .maybeSingle(),
+    );
+    final through = DateTime.tryParse(latest?['updated_at']?.toString() ?? '');
+    if (latest == null || through == null) {
+      return const SyncSignalBatch(rows: [], updatedThrough: null);
+    }
+    final lowerBound = updatedSince?.toUtc().subtract(SyncCursor.overlap);
+    final rows = await fetchAllPages<Map<String, dynamic>>((
+      offset,
+      limit,
+    ) async {
+      var query = _db
+          .from('mindtrack_sync_signals')
+          .select(
+            'user_id, entity_type, record_type, record_id, record_version, deleted_at, updated_at',
+          )
+          .eq('user_id', uid)
+          .eq('entity_type', entityType)
+          .lte('updated_at', through.toUtc().toIso8601String());
+      if (lowerBound != null) {
+        query = query.gte('updated_at', lowerBound.toIso8601String());
+      }
+      final page = await _guardForUser(
+        uid,
+        () => query
+            .order('updated_at')
+            .order('record_type')
+            .order('record_id')
+            .range(offset, offset + limit - 1),
+      );
+      return (page as List)
+          .whereType<Map>()
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList();
+    }, pageSize: _syncPageSize);
+    return SyncSignalBatch(rows: rows, updatedThrough: through.toUtc());
+  }
+  Future<SyncSignalBatch> _fetchTaskChangesSince({
+    required String uid,
+    required String ownerColumn,
+    DateTime? updatedSince,
+  }) async {
+    final latest = await _guardForUser(
+      uid,
+      () => _db
+          .from('tasks')
+          .select('updated_at')
+          .eq(ownerColumn, uid)
+          .order('updated_at', ascending: false)
+          .order('id', ascending: false)
+          .limit(1)
+          .maybeSingle(),
+    );
+    final through = DateTime.tryParse(latest?['updated_at']?.toString() ?? '');
+    if (latest == null || through == null) {
+      return const SyncSignalBatch(rows: [], updatedThrough: null);
+    }
+    final lowerBound = updatedSince?.toUtc().subtract(SyncCursor.overlap);
+    final rows = await fetchAllPages<Map<String, dynamic>>((
+      offset,
+      limit,
+    ) async {
+      var query = _db
+          .from('tasks')
+          .select('id, updated_at')
+          .eq(ownerColumn, uid)
+          .lte('updated_at', through.toUtc().toIso8601String());
+      if (lowerBound != null) {
+        query = query.gte('updated_at', lowerBound.toIso8601String());
+      }
+      final page = await _guardForUser(
+        uid,
+        () => query
+            .order('updated_at')
+            .order('id')
+            .range(offset, offset + limit - 1),
+      );
+      return (page as List).whereType<Map>().map((row) {
+        final mapped = Map<String, dynamic>.from(row);
+        final stamp = DateTime.tryParse(mapped['updated_at']?.toString() ?? '');
+        return <String, dynamic>{
+          'user_id': uid,
+          'entity_type': 'task',
+          'record_type': 'task',
+          'record_id': mapped['id']?.toString() ?? '',
+          // Tasks have no persisted row version; timestamp microseconds give
+          // the fallback a stable stale/duplicate comparison token.
+          'record_version': stamp?.microsecondsSinceEpoch ?? 0,
+          'updated_at': mapped['updated_at'],
+        };
+      }).toList();
+    }, pageSize: _syncPageSize);
+    return SyncSignalBatch(rows: rows, updatedThrough: through.toUtc());
   }
 
   Stream<List<Map<String, dynamic>>> watchPsychologistRecords() {
@@ -737,7 +1021,7 @@ class MindTrackBackend {
   Stream<List<Map<String, dynamic>>> watchClientTasks() {
     final uid = userId;
     if (uid == null) return Stream.value(const []);
-    return _watch('tasks', {'client_uid': uid}, rowMapper: _legacyTask);
+    return _watchIncrementalTasks(uid: uid, ownerColumn: 'client_uid');
   }
 
   /// Psikologun gönderdiği görevler ve danışanların cevapları.
@@ -748,7 +1032,7 @@ class MindTrackBackend {
   Stream<List<Map<String, dynamic>>> watchPsychologistTasks() {
     final uid = userId;
     if (uid == null) return Stream.value(const []);
-    return _watch('tasks', {'psychologist_id': uid}, rowMapper: _legacyTask);
+    return _watchIncrementalTasks(uid: uid, ownerColumn: 'psychologist_id');
   }
 
   /// `watchPsychologistTasks` akışının tek seferlik karşılığı. Canlı akış
@@ -756,8 +1040,245 @@ class MindTrackBackend {
   Future<List<Map<String, dynamic>>> psychologistTasks() async {
     final uid = userId;
     if (uid == null) return const [];
-    final rows = await _select('tasks', {'psychologist_id': uid});
+    final rows = await fetchAllPages<Map<String, dynamic>>((
+      offset,
+      limit,
+    ) async {
+      final page = await _guardForUser(
+        uid,
+        () => _db
+            .from('tasks')
+            .select()
+            .eq('psychologist_id', uid)
+            .order('id')
+            .range(offset, offset + limit - 1),
+      );
+      return (page as List)
+          .whereType<Map>()
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList();
+    }, pageSize: _syncPageSize);
     return rows.map(_legacyTask).whereType<Map<String, dynamic>>().toList();
+  }
+  Stream<List<Map<String, dynamic>>> _watchIncrementalTasks({
+    required String uid,
+    required String ownerColumn,
+  }) {
+    final controller = StreamController<List<Map<String, dynamic>>>();
+    final cached = <String, Map<String, dynamic>>{};
+    final signalVersions = <String, int>{};
+    final requestedSignalVersions = <String, int>{};
+    final cursor = ValueNotifier<SyncCursor?>(null);
+    late final StreamSubscription<Map<String, dynamic>> signalSubscription;
+    late final StreamSubscription<AuthState> authSubscription;
+    Timer? fallbackTimer;
+    var loading = false;
+    var initialized = false;
+    var queuedRefresh = false;
+    var invalidated = false;
+
+    void invalidateOnAccountSwitch() {
+      if (invalidated || controller.isClosed || userId == uid) return;
+      invalidated = true;
+      cached.clear();
+      controller.add(const <Map<String, dynamic>>[]);
+      fallbackTimer?.cancel();
+      unawaited(signalSubscription.cancel());
+      unawaited(authSubscription.cancel());
+    }
+
+    List<Map<String, dynamic>> snapshot() {
+      final rows = cached.values.toList()
+        ..sort((a, b) {
+          final byCreated = _asMillis(b['created_at'])
+              .compareTo(_asMillis(a['created_at']));
+          return byCreated != 0
+              ? byCreated
+              : a['id'].toString().compareTo(b['id'].toString());
+        });
+      return rows.map(_legacyTask).whereType<Map<String, dynamic>>().toList();
+    }
+
+    Future<List<Map<String, dynamic>>> loadSnapshot() =>
+        fetchAllPages((offset, limit) async {
+          final rows = await _guardForUser(
+            uid,
+            () => _db
+                .from('tasks')
+                .select()
+                .eq(ownerColumn, uid)
+                .order('id')
+                .range(offset, offset + limit - 1),
+          );
+          return (rows as List)
+              .whereType<Map>()
+              .map((row) => Map<String, dynamic>.from(row))
+              .toList();
+        }, pageSize: _syncPageSize);
+
+    Future<void> applySignal(Map<String, dynamic> signal) async {
+      if (controller.isClosed) return;
+      if (userId != uid) {
+        invalidateOnAccountSwitch();
+        return;
+      }
+      if (loading && !initialized) {
+        queuedRefresh = true;
+        return;
+      }
+      final id = signal['record_id']?.toString();
+      if (signal['user_id']?.toString() != uid || id == null || id.isEmpty) {
+        return;
+      }
+      // Both trigger signals and the no-migration fallback carry updated_at;
+      // comparing that common microsecond token avoids mixing signal counters
+      // with timestamp revisions.
+      final stamp = DateTime.tryParse(signal['updated_at']?.toString() ?? '');
+      final version =
+          stamp?.microsecondsSinceEpoch ??
+          (signal['record_version'] as num?)?.toInt() ??
+          0;
+      if (version <= (signalVersions[id] ?? 0) ||
+          version <= (requestedSignalVersions[id] ?? 0)) {
+        return;
+      }
+      requestedSignalVersions[id] = version;
+
+      if (signal['deleted_at'] != null) {
+        final changed = applyTaskSyncRow(
+          rows: cached,
+          appliedSignalVersions: signalVersions,
+          signal: signal,
+          fetchedRow: null,
+        );
+        if (changed && !controller.isClosed) controller.add(snapshot());
+        return;
+      }
+      dynamic row;
+      try {
+        row = await _guardForUser(
+          uid,
+          () => _db
+              .from('tasks')
+              .select()
+              .eq(ownerColumn, uid)
+              .eq('id', id)
+              .maybeSingle(),
+        );
+      } catch (_) {
+        if (requestedSignalVersions[id] == version) {
+          requestedSignalVersions.remove(id);
+        }
+        return;
+      }
+      if (controller.isClosed ||
+          userId != uid ||
+          version < (requestedSignalVersions[id] ?? 0)) {
+        return;
+      }
+      final changed = applyTaskSyncRow(
+        rows: cached,
+        appliedSignalVersions: signalVersions,
+        signal: signal,
+        fetchedRow: row == null ? null : Map<String, dynamic>.from(row),
+      );
+      if (!changed && (signalVersions[id] ?? 0) < version) {
+        requestedSignalVersions.remove(id);
+      }
+      if (changed && !controller.isClosed) controller.add(snapshot());
+    }
+
+    Future<void> reconcile() async {
+      if (controller.isClosed) return;
+      if (userId != uid) {
+        invalidateOnAccountSwitch();
+        return;
+      }
+      if (loading) {
+        queuedRefresh = true;
+        return;
+      }
+      loading = true;
+      try {
+        if (!initialized) {
+          final rows = await loadSnapshot();
+          if (controller.isClosed || userId != uid) return;
+          cached
+            ..clear()
+            ..addEntries(
+              rows.map((row) => MapEntry(row['id'].toString(), row)),
+            );
+          cursor.value = SyncCursor.fromRows(rows);
+          initialized = true;
+          controller.add(snapshot());
+        }
+        late final SyncSignalBatch batch;
+        try {
+          batch = await _fetchSyncSignals(
+            expectedUserId: uid,
+            entityType: 'task',
+            updatedSince: cursor.value?.updatedAt,
+          );
+        } catch (_) {
+          // Until the draft signal migration is approved/applied, this
+          // owner-filtered delta still catches task updates without full polls.
+          batch = await _fetchTaskChangesSince(
+            uid: uid,
+            ownerColumn: ownerColumn,
+            updatedSince: cursor.value?.updatedAt,
+          );
+        }
+        for (final signal in batch.rows) {
+          await applySignal(signal);
+          if (controller.isClosed || userId != uid) return;
+        }
+        cursor.value = (cursor.value ?? const SyncCursor(null)).advance(
+          batch.updatedThrough,
+        );
+        if (batch.updatedThrough != null) controller.add(snapshot());
+      } catch (_) {
+        // A disconnect does not terminate the stream; the next signal or
+        // foreground reconciliation retries the delta.
+      } finally {
+        loading = false;
+        if (queuedRefresh && !controller.isClosed) {
+          queuedRefresh = false;
+          unawaited(reconcile());
+        }
+      }
+    }
+
+    signalSubscription =
+        _watchSyncSignals(expectedUserId: uid, entityType: 'task').listen((
+          signal,
+        ) {
+          if (signal['__reconcile__'] == true) {
+            unawaited(reconcile());
+          } else {
+            unawaited(applySignal(signal));
+          }
+        }, onError: (_) => unawaited(reconcile()));
+    authSubscription = _db.auth.onAuthStateChange.listen((_) {
+      if (userId != uid) invalidateOnAccountSwitch();
+    });
+    fallbackTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      if (userId != uid) {
+        invalidateOnAccountSwitch();
+        return;
+      }
+      if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+        unawaited(reconcile());
+      }
+    });
+    unawaited(reconcile());
+
+    controller.onCancel = () async {
+      fallbackTimer?.cancel();
+      cursor.dispose();
+      await signalSubscription.cancel();
+      await authSubscription.cancel();
+    };
+    return controller.stream;
   }
 
   Future<void> assignTask({
@@ -847,10 +1368,26 @@ class MindTrackBackend {
 
   // -------------------------------------------------------------- PDFler ---
 
-  Future<String> uploadPdf(String fileId, Uint8List bytes) async {
+  Future<String> uploadPdf(
+    String fileId,
+    Uint8List bytes, {
+    required String expectedUserId,
+  }) async {
     final uid = userId;
-    if (uid == null) throw BackendException('Oturum bulunamadı.');
+    if (uid == null || uid != expectedUserId) {
+      throw BackendException('Oturum değişti; belge yüklenmedi.');
+    }
+    if (fileId.isEmpty ||
+        fileId == '.' ||
+        fileId == '..' ||
+        fileId.contains('/') ||
+        fileId.contains(String.fromCharCode(92))) {
+      throw BackendException('Belge kimliği geçersiz; dosya yüklenmedi.');
+    }
     return _guard(() async {
+      if (userId != uid) {
+        throw BackendException('Oturum değişti; belge yüklenmedi.');
+      }
       final path = '$uid/$fileId';
       await _db.storage
           .from(pdfBucket)
@@ -866,14 +1403,49 @@ class MindTrackBackend {
     });
   }
 
-  Future<Uint8List> downloadPdf(String path) async {
-    return _guard(() => _db.storage.from(pdfBucket).download(path));
+  Future<Uint8List> downloadPdf(
+    String path, {
+    required String expectedUserId,
+  }) async {
+    final uid = userId;
+    _validateStorageOwner(path, expectedUserId, uid);
+    return _guard(() async {
+      if (userId != uid) {
+        throw BackendException('Oturum değişti; belge okunmadı.');
+      }
+      final bytes = await _db.storage.from(pdfBucket).download(path);
+      if (userId != uid) {
+        throw BackendException('Oturum değişti; belge yanıtı kabul edilmedi.');
+      }
+      return bytes;
+    });
   }
 
-  Future<void> deletePdf(String path) async {
+  Future<void> deletePdf(String path, {required String expectedUserId}) async {
+    final uid = userId;
+    _validateStorageOwner(path, expectedUserId, uid);
     await _guard(() async {
+      if (userId != uid) {
+        throw BackendException('Oturum değişti; belge silinmedi.');
+      }
       await _db.storage.from(pdfBucket).remove([path]);
     });
+  }
+  void _validateStorageOwner(
+    String path,
+    String expectedUserId,
+    String? currentUserId,
+  ) {
+    final segments = path.split('/');
+    if (currentUserId == null ||
+        currentUserId != expectedUserId ||
+        segments.length < 2 ||
+        segments.first != expectedUserId ||
+        segments.any(
+          (segment) => segment.isEmpty || segment == '.' || segment == '..',
+        )) {
+      throw BackendException('Belge yolu bu hesaba ait değil.');
+    }
   }
 
   // -------------------------------------------------------------- iç yapı ---

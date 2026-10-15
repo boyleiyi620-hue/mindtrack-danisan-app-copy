@@ -683,8 +683,8 @@ class _FormsTabState extends State<FormsTab> {
 /// Danışanların gönderdiği form cevaplarını canlı izleyen pencere.
 ///
 /// Cevaplar `tasks` tablosunda durur. Danışan `submit_task` ile yazdığında
-/// Realtime üzerinden akış anında tazelenir; ayrıca "Yenile" düğmesi
-/// bağlantı kopmuşsa elle çekme imkânı verir.
+/// metadata-only Realtime sinyali ilgili satırı yeniden getirir; ayrıca
+/// "Yenile" düğmesi bağlantı kopmuşsa elle çekme imkânı verir.
 class _IncomingResponsesDialog extends StatefulWidget {
   const _IncomingResponsesDialog({required this.form});
 

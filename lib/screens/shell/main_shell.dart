@@ -131,6 +131,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   }
 
   Timer? _watchTimer;
+  Timer? _syncFallbackTimer;
   DateTime _lastActivity = DateTime.now();
   DateTime? _hiddenAt;
 
@@ -148,12 +149,20 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
         if (el.inMinutes >= _u.lockTimeout) _lock();
       }
     });
+    _syncFallbackTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed &&
+          !_locked &&
+          !_logoutBusy) {
+        unawaited(widget.data.reconcileRemoteChanges());
+      }
+    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _watchTimer?.cancel();
+    _syncFallbackTimer?.cancel();
     super.dispose();
   }
 
@@ -171,6 +180,9 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
         _lock();
       }
       _hiddenAt = null;
+      if (!_locked && !_logoutBusy) {
+        unawaited(widget.data.reconcileRemoteChanges());
+      }
     }
   }
 
