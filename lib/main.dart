@@ -243,7 +243,15 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _submit() async {
-    if (_email.text.trim().isEmpty || _pass.text.isEmpty) return;
+    final email = _email.text.trim();
+    if (email.isEmpty || _pass.text.isEmpty) {
+      _showError('E-posta ve şifre alanları gereklidir.');
+      return;
+    }
+    if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]{2,}$').hasMatch(email)) {
+      _showError('Geçerli bir e-posta adresi girin.');
+      return;
+    }
     if (_isReg && _name.text.trim().isEmpty) {
       _showError('Ad soyad alanı gereklidir.');
       return;
@@ -251,7 +259,6 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _loading = true);
     try {
       final backend = MindTrackBackend.instance;
-      final email = _email.text.trim();
       if (_isReg) {
         await backend.signUp(email, _pass.text, displayName: _name.text.trim());
         if (!backend.isSignedIn) {
@@ -433,6 +440,8 @@ class ClientShell extends StatefulWidget {
 
 class _ClientShellState extends State<ClientShell> {
   int _idx = 0;
+  late final Stream<Map<String, dynamic>?> Function() _patientStreamFactory =
+      MindTrackBackend.instance.watchPatient;
 
   void selectTab(int index) => setState(() => _idx = index);
 
@@ -440,15 +449,10 @@ class _ClientShellState extends State<ClientShell> {
   Widget build(BuildContext context) {
     if (!MindTrackBackend.instance.isSignedIn) return const LoginScreen();
 
-    return StreamBuilder<Map<String, dynamic>?>(
-      stream: MindTrackBackend.instance.watchPatient(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
-        final patient = snapshot.data ?? <String, dynamic>{};
+    return ClientPatientDataGate(
+      streamFactory: _patientStreamFactory,
+      builder: (patientData) {
+        final patient = patientData ?? <String, dynamic>{};
         if (patient['consented'] != true) return const ConsentScreen();
         final psychologistId = patient['psychologistId']?.toString();
         if (psychologistId == null || psychologistId.isEmpty) {
@@ -457,18 +461,15 @@ class _ClientShellState extends State<ClientShell> {
 
         final safeIndex = _idx.clamp(0, 3);
         final Widget page = switch (safeIndex) {
-          0 => ClientOverview(
-              patient: patient,
-              psychologistId: psychologistId,
-            ),
+          0 => ClientOverview(patient: patient, psychologistId: psychologistId),
           1 => ClientAppointments(
-              patient: patient,
-              psychologistId: psychologistId,
-            ),
+            patient: patient,
+            psychologistId: psychologistId,
+          ),
           2 => ClientHomeworks(
-              patient: patient,
-              psychologistId: psychologistId,
-            ),
+            patient: patient,
+            psychologistId: psychologistId,
+          ),
           _ => ClientProfile(patient: patient),
         };
 
@@ -502,6 +503,139 @@ class _ClientShellState extends State<ClientShell> {
           ),
         );
       },
+    );
+  }
+}
+
+typedef PatientStreamFactory = Stream<Map<String, dynamic>?> Function();
+typedef PatientDataBuilder = Widget Function(Map<String, dynamic>? patient);
+
+/// Loads the signed-in client's profile without confusing an absent row with
+/// an unreceived event, and gives stalled connections a recoverable UI state.
+class ClientPatientDataGate extends StatefulWidget {
+  const ClientPatientDataGate({
+    super.key,
+    required this.streamFactory,
+    required this.builder,
+    this.timeout = const Duration(seconds: 20),
+  });
+
+  final PatientStreamFactory streamFactory;
+  final PatientDataBuilder builder;
+  final Duration timeout;
+
+  @override
+  State<ClientPatientDataGate> createState() => _ClientPatientDataGateState();
+}
+
+class _ClientPatientDataGateState extends State<ClientPatientDataGate> {
+  late Stream<Map<String, dynamic>?> _stream;
+  int _attempt = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _stream = _createStream();
+  }
+
+  @override
+  void didUpdateWidget(covariant ClientPatientDataGate oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.streamFactory != widget.streamFactory ||
+        oldWidget.timeout != widget.timeout) {
+      _attempt += 1;
+      _stream = _createStream();
+    }
+  }
+
+  Stream<Map<String, dynamic>?> _createStream() {
+    var receivedFirstEvent = false;
+    final stream = widget.streamFactory().transform(
+      StreamTransformer<
+        Map<String, dynamic>?,
+        Map<String, dynamic>?
+      >.fromHandlers(
+        handleData: (data, sink) {
+          receivedFirstEvent = true;
+          sink.add(data);
+        },
+      ),
+    );
+    return stream.timeout(
+      widget.timeout,
+      onTimeout: (sink) {
+        if (!receivedFirstEvent) {
+          sink.addError(
+            TimeoutException('Danışan bilgileri zaman aşımına uğradı.'),
+          );
+        }
+      },
+    );
+  }
+
+  void _retry() => setState(() {
+    _attempt += 1;
+    _stream = _createStream();
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<Map<String, dynamic>?>(
+      key: ValueKey<int>(_attempt),
+      stream: _stream,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _PatientDataLoadFailure(onRetry: _retry);
+        }
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        // A legitimate missing profile is emitted as null. It must reach the
+        // pairing/consent flow instead of being mistaken for an endless load.
+        return widget.builder(snapshot.data);
+      },
+    );
+  }
+}
+
+class _PatientDataLoadFailure extends StatelessWidget {
+  const _PatientDataLoadFailure({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.cloud_off_outlined, size: 44),
+              const SizedBox(height: 12),
+              const Text(
+                'Danışan bilgileri yüklenemedi.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Bağlantınızı kontrol edip yeniden deneyin.',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Yeniden Dene'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -775,7 +909,6 @@ class ClientAppointments extends StatelessWidget {
   Widget build(BuildContext context) {
     final backend = MindTrackBackend.instance;
     if (!backend.isSignedIn) return const SizedBox.shrink();
-    final stream = backend.watchClientAppointments();
 
     return Scaffold(
       appBar: AppBar(
@@ -788,19 +921,15 @@ class ClientAppointments extends StatelessWidget {
           ),
         ],
       ),
-      body: StreamBuilder<List<Map<String, dynamic>>>(
-        stream: stream,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(
-              child: Text('Randevular yüklenemedi: ${snapshot.error}'),
-            );
-          }
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final docs = [
-            ...snapshot.data!,
+      body: ClientInitialStreamGate<List<Map<String, dynamic>>>(
+        streamFactory: _watchClientAppointments,
+        errorBuilder: (context, error, onRetry) => _ClientStreamLoadError(
+          message: 'Randevular yüklenemedi: $error',
+          onRetry: onRetry,
+        ),
+        builder: (context, docs) {
+          final sortedDocs = [
+            ...docs,
           ]..sort((a, b) => _appointmentDate(a).compareTo(_appointmentDate(b)));
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -816,7 +945,7 @@ class ClientAppointments extends StatelessWidget {
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
-              if (docs.isEmpty)
+              if (sortedDocs.isEmpty)
                 const Card(
                   child: Padding(
                     padding: EdgeInsets.all(20),
@@ -826,7 +955,7 @@ class ClientAppointments extends StatelessWidget {
                   ),
                 )
               else
-                for (final doc in docs) _appointmentCard(context, doc),
+                for (final doc in sortedDocs) _appointmentCard(context, doc),
             ],
           );
         },
@@ -1061,18 +1190,13 @@ class ClientHomeworks extends StatelessWidget {
     if (!backend.isSignedIn) return const SizedBox.shrink();
     return Scaffold(
       appBar: AppBar(title: const Text('Formlar ve Ödevler')),
-      body: StreamBuilder<List<Map<String, dynamic>>>(
-        stream: backend.watchClientTasks(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(
-              child: Text('Formlar yüklenemedi: ${snapshot.error}'),
-            );
-          }
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final docs = snapshot.data!;
+      body: ClientInitialStreamGate<List<Map<String, dynamic>>>(
+        streamFactory: _watchClientTasks,
+        errorBuilder: (context, error, onRetry) => _ClientStreamLoadError(
+          message: 'Formlar yüklenemedi: $error',
+          onRetry: onRetry,
+        ),
+        builder: (context, docs) {
           if (docs.isEmpty) {
             return const Center(
               child: Text('Henüz atanmış form veya ödev yok.'),
@@ -1134,6 +1258,143 @@ class ClientHomeworks extends StatelessWidget {
         const SnackBar(content: Text('Form Başarıyla Gönderildi.')),
       );
     }
+  }
+}
+
+typedef ClientListStreamFactory<T> = Stream<T> Function();
+typedef ClientStreamDataBuilder<T> = Widget Function(
+  BuildContext context,
+  T data,
+);
+typedef ClientStreamErrorBuilder = Widget Function(
+  BuildContext context,
+  Object error,
+  VoidCallback onRetry,
+);
+
+Stream<List<Map<String, dynamic>>> _watchClientAppointments() =>
+    MindTrackBackend.instance.watchClientAppointments();
+
+Stream<List<Map<String, dynamic>>> _watchClientTasks() =>
+    MindTrackBackend.instance.watchClientTasks();
+
+/// Shows retry only when the first stream event stalls or an error is emitted.
+/// The timeout is disabled after the first data event so live, quiet streams
+/// remain connected without being mistaken for a failed initial load.
+class ClientInitialStreamGate<T> extends StatefulWidget {
+  const ClientInitialStreamGate({
+    super.key,
+    required this.streamFactory,
+    required this.builder,
+    required this.errorBuilder,
+    this.timeout = const Duration(seconds: 20),
+  });
+
+  final ClientListStreamFactory<T> streamFactory;
+  final ClientStreamDataBuilder<T> builder;
+  final ClientStreamErrorBuilder errorBuilder;
+  final Duration timeout;
+
+  @override
+  State<ClientInitialStreamGate<T>> createState() =>
+      _ClientInitialStreamGateState<T>();
+}
+
+class _ClientInitialStreamGateState<T>
+    extends State<ClientInitialStreamGate<T>> {
+  late Stream<T> _stream;
+  int _attempt = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _stream = _createStream();
+  }
+
+  @override
+  void didUpdateWidget(covariant ClientInitialStreamGate<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.streamFactory != widget.streamFactory ||
+        oldWidget.timeout != widget.timeout) {
+      _attempt += 1;
+      _stream = _createStream();
+    }
+  }
+
+  Stream<T> _createStream() {
+    var receivedFirstResponse = false;
+    var timeoutReported = false;
+    final source = widget.streamFactory().transform(
+      StreamTransformer<T, T>.fromHandlers(
+        handleData: (data, sink) {
+          receivedFirstResponse = true;
+          sink.add(data);
+        },
+      ),
+    );
+    return source.timeout(
+      widget.timeout,
+      onTimeout: (sink) {
+        if (!receivedFirstResponse && !timeoutReported) {
+          timeoutReported = true;
+          sink.addError(
+            TimeoutException('İlk liste yanıtı zamanında alınamadı.'),
+          );
+        }
+      },
+    );
+  }
+
+  void _retry() {
+    setState(() {
+      _attempt += 1;
+      _stream = _createStream();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<T>(
+      key: ValueKey<int>(_attempt),
+      stream: _stream,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return widget.errorBuilder(context, snapshot.error!, _retry);
+        }
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        return widget.builder(context, snapshot.data as T);
+      },
+    );
+  }
+}
+
+class _ClientStreamLoadError extends StatelessWidget {
+  const _ClientStreamLoadError({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(message, textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Yeniden Dene'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -1220,6 +1481,14 @@ class _ClientFormDialogState extends State<ClientFormDialog> {
                 padding: const EdgeInsets.only(bottom: 16),
                 child: Text(widget.draft['description'].toString()),
               ),
+            if (_questions.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Text(
+                  'Bu formda yanıtlanabilir soru bulunmuyor. Lütfen psikoloğunuzdan formu kontrol etmesini isteyin.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
             Expanded(
               child: ListView.builder(
                 keyboardDismissBehavior:
@@ -1245,7 +1514,7 @@ class _ClientFormDialogState extends State<ClientFormDialog> {
           child: const Text('Vazgeç'),
         ),
         FilledButton(
-          onPressed: _saving ? null : _save,
+          onPressed: _saving || _questions.isEmpty ? null : _save,
           child: _saving
               ? const SizedBox(
                   width: 18,
@@ -1350,10 +1619,20 @@ class _ClientFormDialogState extends State<ClientFormDialog> {
     String id,
     dynamic answer,
   ) {
-    final max = (question['scaleMax'] as num?)?.toDouble() ?? 5;
-    final current = ((answer as num?)?.toDouble() ?? 1)
-        .clamp(1, max)
-        .toDouble();
+    final rawMax = question['scaleMax'];
+    final parsedMax = rawMax is num
+        ? rawMax.toDouble()
+        : double.tryParse(rawMax?.toString() ?? '');
+    final max = parsedMax != null && parsedMax.isFinite && parsedMax >= 2
+        ? parsedMax
+        : 5.0;
+    final parsedAnswer = answer is num
+        ? answer.toDouble()
+        : double.tryParse(answer?.toString() ?? '');
+    final answerValue = parsedAnswer != null && parsedAnswer.isFinite
+        ? parsedAnswer
+        : 1.0;
+    final current = answerValue.clamp(1.0, max).toDouble();
     return Column(
       children: [
         Slider(
