@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mindtrack_danisan_app/main.dart';
@@ -14,6 +16,39 @@ Widget _streamErrorBuilder(
       FilledButton(onPressed: onRetry, child: const Text('Yeniden Dene')),
     ],
   );
+}
+
+Future<void> _openUnsavedForm(WidgetTester tester) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: Builder(
+          builder: (context) => FilledButton(
+            onPressed: () => showDialog<void>(
+              context: context,
+              builder: (_) => const ClientFormDialog(
+                taskId: 'task-discard',
+                taskData: <String, dynamic>{},
+                draft: <String, dynamic>{
+                  'title': 'Deneme formu',
+                  'questions': <Map<String, dynamic>>[
+                    <String, dynamic>{
+                      'id': 'answer',
+                      'type': 'text',
+                      'text': 'Yanıtınız',
+                    },
+                  ],
+                },
+              ),
+            ),
+            child: const Text('Formu Aç'),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.tap(find.text('Formu Aç'));
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -260,5 +295,78 @@ void main() {
 
     expect(find.byType(Slider), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('yanıtı değişen form dışarı tıklamayla sessizce kaybolmaz', (
+    tester,
+  ) async {
+    await _openUnsavedForm(tester);
+    await tester.enterText(find.byType(TextFormField), 'Önemli yanıt');
+    await tester.pump();
+
+    await tester.tapAt(const Offset(8, 8));
+    await tester.pumpAndSettle();
+    expect(find.text('Yanıtlar kaydedilmedi'), findsOneWidget);
+    expect(find.text('Forma Dön'), findsOneWidget);
+
+    await tester.tap(find.text('Forma Dön'));
+    await tester.pumpAndSettle();
+    expect(find.text('Deneme formu'), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('Yanıtlar kaydedilmedi'), findsOneWidget);
+    await tester.tap(find.text('Forma Dön'));
+    await tester.pumpAndSettle();
+    expect(find.text('Deneme formu'), findsOneWidget);
+
+    await tester.tap(find.text('Vazgeç'));
+    await tester.pumpAndSettle();
+    expect(find.text('Yanıtlar kaydedilmedi'), findsOneWidget);
+    await tester.tap(find.text('Değişiklikleri At'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ClientFormDialog), findsNothing);
+  });
+
+  testWidgets('hızlı çift randevu gönderimi tek istek üretir', (tester) async {
+    final pendingSubmit = Completer<void>();
+    var submissions = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => FilledButton(
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (_) => AppointmentRequestDialog(
+                  onSubmit: (_) {
+                    submissions += 1;
+                    return pendingSubmit.future;
+                  },
+                ),
+              ),
+              child: const Text('Randevu dialogunu aç'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Randevu dialogunu aç'));
+    await tester.pumpAndSettle();
+
+    final submit = tester
+        .widget<FilledButton>(
+          find.widgetWithText(FilledButton, 'Randevu Talebi Gönder'),
+        )
+        .onPressed!;
+    submit();
+    submit();
+
+    expect(submissions, 1);
+    await tester.pump();
+    pendingSubmit.complete();
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
   });
 }

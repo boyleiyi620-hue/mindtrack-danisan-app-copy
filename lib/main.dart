@@ -1109,6 +1109,7 @@ class _AppointmentRequestDialogState extends State<AppointmentRequestDialog> {
   }
 
   Future<void> _submit() async {
+    if (_saving) return;
     setState(() {
       _saving = true;
       _error = null;
@@ -1419,6 +1420,8 @@ class _ClientFormDialogState extends State<ClientFormDialog> {
   late final Map<String, dynamic> _answers;
   String? _error;
   bool _saving = false;
+  bool _hasUnsavedChanges = false;
+  bool _confirmingDiscard = false;
 
   @override
   void initState() {
@@ -1428,6 +1431,50 @@ class _ClientFormDialogState extends State<ClientFormDialog> {
         .where((question) => question.isNotEmpty)
         .toList();
     _answers = _mapValue(widget.taskData['structuredAnswers']);
+  }
+
+  void _setAnswer(String id, dynamic value) {
+    if (_answers[id] == value) return;
+    setState(() {
+      _answers[id] = value;
+      _hasUnsavedChanges = true;
+    });
+  }
+
+  Future<void> _confirmClose() async {
+    if (_saving || _confirmingDiscard) return;
+    if (!_hasUnsavedChanges) {
+      Navigator.of(context).pop(false);
+      return;
+    }
+
+    setState(() => _confirmingDiscard = true);
+    bool? discard;
+    try {
+      discard = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Yanıtlar kaydedilmedi'),
+          content: const Text(
+            'Yaptığınız değişiklikler gönderilmedi. Formdan çıkarsanız bu '
+            'yanıtlar kaybolacak.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Forma Dön'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Değişiklikleri At'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _confirmingDiscard = false);
+    }
+    if (discard == true && mounted) Navigator.of(context).pop(false);
   }
 
   Future<void> _save() async {
@@ -1465,65 +1512,72 @@ class _ClientFormDialogState extends State<ClientFormDialog> {
         widget.draft['title']?.toString() ??
         widget.taskData['title']?.toString() ??
         'Form';
-    return AlertDialog(
-      title: Text(title),
-      content: SizedBox(
-        width: 620,
-        height: (MediaQuery.sizeOf(context).height -
-                MediaQuery.viewInsetsOf(context).bottom)
-            .clamp(220.0, 620.0) *
-            .62,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if ((widget.draft['description']?.toString() ?? '').isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: Text(widget.draft['description'].toString()),
-              ),
-            if (_questions.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: Text(
-                  'Bu formda yanıtlanabilir soru bulunmuyor. Lütfen psikoloğunuzdan formu kontrol etmesini isteyin.',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            Expanded(
-              child: ListView.builder(
-                keyboardDismissBehavior:
-                    ScrollViewKeyboardDismissBehavior.onDrag,
-                itemCount: _questions.length,
-                itemBuilder: (context, index) => Padding(
-                  key: ValueKey(_questions[index]['id'] ?? 'q$index'),
+    return PopScope<Object?>(
+      canPop: !_hasUnsavedChanges && !_saving && !_confirmingDiscard,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) unawaited(_confirmClose());
+      },
+      child: AlertDialog(
+        title: Text(title),
+        content: SizedBox(
+          width: 620,
+          height:
+              (MediaQuery.sizeOf(context).height -
+                      MediaQuery.viewInsetsOf(context).bottom)
+                  .clamp(220.0, 620.0) *
+              .62,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if ((widget.draft['description']?.toString() ?? '').isNotEmpty)
+                Padding(
                   padding: const EdgeInsets.only(bottom: 16),
-                  child: _questionWidget(_questions[index], index),
+                  child: Text(widget.draft['description'].toString()),
+                ),
+              if (_questions.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: Text(
+                    'Bu formda yanıtlanabilir soru bulunmuyor. Lütfen psikoloğunuzdan formu kontrol etmesini isteyin.',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              Expanded(
+                child: ListView.builder(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  itemCount: _questions.length,
+                  itemBuilder: (context, index) => Padding(
+                    key: ValueKey(_questions[index]['id'] ?? 'q$index'),
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: _questionWidget(_questions[index], index),
+                  ),
                 ),
               ),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 8),
-              Text(_error!, style: const TextStyle(color: Colors.red)),
+              if (_error != null) ...[
+                const SizedBox(height: 8),
+                Text(_error!, style: const TextStyle(color: Colors.red)),
+              ],
             ],
-          ],
+          ),
         ),
+        actions: [
+          TextButton(
+            onPressed: _saving || _confirmingDiscard ? null : _confirmClose,
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            onPressed: _saving || _questions.isEmpty ? null : _save,
+            child: _saving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Formu Tamamla ve Gönder'),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: _saving ? null : () => Navigator.pop(context, false),
-          child: const Text('Vazgeç'),
-        ),
-        FilledButton(
-          onPressed: _saving || _questions.isEmpty ? null : _save,
-          child: _saving
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Formu Tamamla ve Gönder'),
-        ),
-      ],
     );
   }
 
@@ -1558,7 +1612,7 @@ class _ClientFormDialogState extends State<ClientFormDialog> {
                     child: Center(child: Text('Evet')),
                   ),
                   selected: answer == 'Evet',
-                  onSelected: (_) => setState(() => _answers[id] = 'Evet'),
+                  onSelected: (_) => _setAnswer(id, 'Evet'),
                 ),
               ),
               const SizedBox(width: 10),
@@ -1569,7 +1623,7 @@ class _ClientFormDialogState extends State<ClientFormDialog> {
                     child: Center(child: Text('Hayır')),
                   ),
                   selected: answer == 'Hayır',
-                  onSelected: (_) => setState(() => _answers[id] = 'Hayır'),
+                  onSelected: (_) => _setAnswer(id, 'Hayır'),
                 ),
               ),
             ],
@@ -1584,7 +1638,7 @@ class _ClientFormDialogState extends State<ClientFormDialog> {
               border: OutlineInputBorder(),
               hintText: 'Yanıtınız...',
             ),
-            onChanged: (value) => _answers[id] = value,
+            onChanged: (value) => _setAnswer(id, value),
           ),
       ],
     );
@@ -1599,7 +1653,7 @@ class _ClientFormDialogState extends State<ClientFormDialog> {
     return [
       RadioGroup<String>(
         groupValue: answer?.toString(),
-        onChanged: (value) => setState(() => _answers[id] = value),
+        onChanged: (value) => _setAnswer(id, value),
         child: Column(
           children: [
             for (final option in options)
@@ -1641,7 +1695,7 @@ class _ClientFormDialogState extends State<ClientFormDialog> {
           max: max,
           divisions: (max - 1).toInt(),
           label: current.toInt().toString(),
-          onChanged: (value) => setState(() => _answers[id] = value.toInt()),
+          onChanged: (value) => _setAnswer(id, value.toInt()),
         ),
         Text('Seçilen Değer: ${current.toInt()}'),
       ],
